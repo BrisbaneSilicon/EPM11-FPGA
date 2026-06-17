@@ -1,0 +1,92 @@
+######################### Locations #########################
+
+IO_LOC  "pad_clk_27Mhz"         52;
+
+IO_LOC  "pad_user_buttons_n[1]" 3;
+IO_LOC  "pad_user_buttons_n[2]" 4;
+
+IO_LOC  "pad_led_n"             10;
+
+# J6
+IO_LOC  "pad_io[1]"             20;
+IO_LOC  "pad_io[2]"             77;
+IO_LOC  "pad_io[3]"             16;
+IO_LOC  "pad_io[4]"             19;
+IO_LOC  "pad_io[5]"             76;
+IO_LOC  "pad_io[6]"             75;
+IO_LOC  "pad_io[7]"             74;
+IO_LOC  "pad_io[8]"             72;
+IO_LOC  "pad_io[9]"             73;
+IO_LOC  "pad_io[10]"            71;
+IO_LOC  "pad_io[11]"            70;
+IO_LOC  "pad_io[12]"            63;
+IO_LOC  "pad_io[13]"            59;
+IO_LOC  "pad_io[14]"            60;
+IO_LOC  "pad_io[15]"            61;
+IO_LOC  "pad_io[16]"            62;
+
+IO_LOC  "pad_cpu[0]"            42;
+IO_LOC  "pad_cpu[1]"            41;
+IO_LOC  "pad_cpu[2]"            40;
+IO_LOC  "pad_cpu[3]"            39;
+IO_LOC  "pad_cpu[4]"            38;
+IO_LOC  "pad_cpu[5]"            37;
+IO_LOC  "pad_cpu[6]"            36;
+IO_LOC  "pad_cpu[7]"            35;
+IO_LOC  "pad_cpu[8]"            34;
+IO_LOC  "pad_cpu[9]"            33;
+IO_LOC  "pad_cpu[10]"           32;
+IO_LOC  "pad_cpu[11]"           31;
+IO_LOC  "pad_cpu[12]"           30;
+IO_LOC  "pad_cpu[13]"           29;
+IO_LOC  "pad_cpu[14]"           28;
+IO_LOC  "pad_cpu[15]"           27;
+IO_LOC  "pad_cpu[16]"           26;
+IO_LOC  "pad_cpu[17]"           25;
+
+
+######################### Configuration #########################
+
+IO_PORT "pad_clk_27Mhz"             IO_TYPE=LVCMOS33    PULL_MODE=UP;
+
+IO_PORT "pad_user_buttons_n[1]"                         PULL_MODE=UP;
+IO_PORT "pad_user_buttons_n[2]"                         PULL_MODE=UP;
+
+IO_PORT "pad_led_n"                                     PULL_MODE=UP    DRIVE=8;
+
+IO_PORT "pad_io[1]"                 IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_io[2]"                 IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_io[3]"                                     PULL_MODE=DOWN  DRIVE=8;
+    # TODO: fixup...
+IO_PORT "pad_io[4]"                 IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_io[5]"                 IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_io[6]"                 IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_io[7]"                 IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_io[8]"                 IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_io[9]"                 IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_io[10]"                IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_io[11]"                IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_io[12]"                IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_io[13]"                IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_io[14]"                IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_io[15]"                IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_io[16]"                IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+
+IO_PORT "pad_cpu[0]"                IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_cpu[1]"                IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_cpu[2]"                IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_cpu[3]"                IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_cpu[4]"                IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_cpu[5]"                IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_cpu[6]"                IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_cpu[7]"                IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_cpu[8]"                IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_cpu[9]"                IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_cpu[10]"               IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_cpu[11]"               IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_cpu[12]"               IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_cpu[13]"               IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_cpu[14]"               IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_cpu[15]"               IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_cpu[16]"               IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_cpu[17]"               IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
