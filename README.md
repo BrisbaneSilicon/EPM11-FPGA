@@ -2,7 +2,7 @@
 # EPM11
 
 
-Example project for the [EPM11](https://brisbanesilicon.com.au/epm11) CPU-FPGA development board by [BrisbaneSilicon](https://brisbanesilicon.com.au/).
+Example project for the [EPM11](https://brisbanesilicon.com.au/epm11) MCU-FPGA development board by [BrisbaneSilicon](https://brisbanesilicon.com.au/).
 <br><br>
 
 ## Table of Contents
@@ -28,7 +28,7 @@ Example project for the [EPM11](https://brisbanesilicon.com.au/epm11) CPU-FPGA d
 
 ## Overview
 
-This project allows the user to build an FPGA bitstream and program it onto the [EPM11](https://brisbanesilicon.com.au/epm11) CPU-FPGA development board.
+This project allows the user to build an FPGA bitstream and program it onto the [EPM11](https://brisbanesilicon.com.au/epm11) MCU-FPGA development board.
 
 It can also be extended by the user to include their custom, application-specific, RTL modules.
 
@@ -312,7 +312,7 @@ For more detailed windows troubleshooting steps, see TROUBLESHOOTING.txt.
 ## Demonstration
 
 > [!NOTE]
-> TODO - describe how to read FPGA version string via CPU
+> TODO - describe how to read FPGA version string via MCU
 
 <br>
 
