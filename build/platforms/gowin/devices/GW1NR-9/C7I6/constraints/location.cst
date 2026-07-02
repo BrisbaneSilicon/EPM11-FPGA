@@ -10,7 +10,7 @@ IO_LOC  "pad_led_n"             10;
 # J6
 IO_LOC  "pad_io[1]"             20;
 IO_LOC  "pad_io[2]"             77;
-IO_LOC  "pad_io[3]"             16;
+IO_LOC  "pad_io[3]"             69;
 IO_LOC  "pad_io[4]"             19;
 IO_LOC  "pad_io[5]"             76;
 IO_LOC  "pad_io[6]"             75;
@@ -56,8 +56,7 @@ IO_PORT "pad_led_n"                                     PULL_MODE=UP    DRIVE=8;
 
 IO_PORT "pad_io[1]"                 IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
 IO_PORT "pad_io[2]"                 IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
-IO_PORT "pad_io[3]"                                     PULL_MODE=DOWN  DRIVE=8;
-    # TODO: fixup...
+IO_PORT "pad_io[3]"                 IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
 IO_PORT "pad_io[4]"                 IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
 IO_PORT "pad_io[5]"                 IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
 IO_PORT "pad_io[6]"                 IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
