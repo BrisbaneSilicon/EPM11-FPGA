@@ -118,28 +118,32 @@ module busV2 #(
             end else begin
 
                 if (pclk_tick && !frame_done) begin
-                    if (beat == 2'b00)
-                        is_read <= ~io_sync;    // io picks the direction
-
                     // the RPI holds each beat for the whole pclk period,
                     // so the wires are quiet when we sample them here
-                    if (!beat[1]) begin
-                        cpu_addr[beat[0]*16 +: 16] <= cpu[15:0];
-
-                        // address is complete, ask the fabric for the value
-                        if (beat == 2'b01 && is_read)
-                            cpu_ren <= 1'b1;
-                    end else if (!is_read) begin
-                        cpu_rdata[beat[0]*16 +: 16] <= cpu[15:0];
-                    end
-
-                    if (beat == 2'b11) begin
-                        frame_done <= 1'b1; // ignore any extra pclk in this burst
-                        if (!is_read)
-                            cpu_valid <= 1'b1;
-                    end else begin
-                        beat <= beat + 2'd1;
-                    end
+                    case (beat)
+                        2'b00: begin
+                            is_read         <= ~io_sync;    // io picks the direction
+                            cpu_addr[15:0]  <= cpu[15:0];
+                            beat            <= 2'b01;
+                        end
+                        2'b01: begin
+                            cpu_addr[31:16] <= cpu[15:0];
+                            cpu_ren         <= is_read;     // address done, fetch it
+                            beat            <= 2'b10;
+                        end
+                        2'b10: begin
+                            if (!is_read)
+                                cpu_rdata[15:0] <= cpu[15:0];
+                            beat            <= 2'b11;
+                        end
+                        2'b11: begin
+                            if (!is_read) begin
+                                cpu_rdata[31:16] <= cpu[15:0];
+                                cpu_valid        <= 1'b1;
+                            end
+                            frame_done      <= 1'b1;        // ignore extra pclk in this burst
+                        end
+                    endcase
                 end
 
                 // Change the read data on the falling edge of pclk so it is
@@ -147,11 +151,20 @@ module busV2 #(
                 // Beat 2 lands here first, which gives the RPI the whole of
                 // pclk 2 to let go of the wires before we drive them.
                 if (pclk_fall) begin
-                    if (is_read && !frame_done && beat[1]) begin
-                        bus_out   <= cpu_wdata[beat[0]*16 +: 16];
-                        bus_drive <= 1'b1;
-                    end else begin
-                        bus_drive <= 1'b0;
+                    bus_drive <= 1'b0;      // default, stay off the bus
+
+                    if (is_read && !frame_done) begin
+                        case (beat)
+                            2'b10: begin
+                                bus_out   <= cpu_wdata[15:0];
+                                bus_drive <= 1'b1;
+                            end
+                            2'b11: begin
+                                bus_out   <= cpu_wdata[31:16];
+                                bus_drive <= 1'b1;
+                            end
+                            default: ;      // address phase, the RPI owns the wires
+                        endcase
                     end
                 end
             end
