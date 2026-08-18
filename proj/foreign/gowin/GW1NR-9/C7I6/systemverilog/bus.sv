@@ -1,11 +1,20 @@
-
 module bus(
     inout  wire [17:0] cpu,
-    input  wire [31:0] cpu_wdata,
+    input  wire [31:0] cpu_wdata,   // for the read direction, not used yet
+    output reg  [31:0] cpu_addr,
     output reg  [31:0] cpu_rdata,
-    input  wire        clk,      // FPGA fabric clock
-    input  wire        rst_n     // FPGA reset
+    output reg         cpu_valid,   // one clk strobe, burst complete
+    input  wire        clk,         // FPGA fabric clock
+    input  wire        rst_n        // FPGA reset
 );
+
+    // A write burst is 4 pclk cycles:
+    //   beat 0 : addr [15:0]
+    //   beat 1 : addr [31:16]
+    //   beat 2 : data [15:0]
+    //   beat 3 : data [31:16]
+    // io high frames the burst, the RPI raises it before beat 0
+    // and drops it after beat 3.
 
     // Raw asynchronous signals from the bus
     wire pclk_raw = cpu[16];
@@ -33,12 +42,12 @@ module bus(
 
     wire pclk_tick = pclk_sync & ~pclk_d;   // rising edge pulse
 
-    reg count = 1'b0;
+    reg [1:0] beat       = 2'b00;
+    reg       frame_done = 1'b0;
 
-    // Tri-state driver for lower 16 bits
-    assign cpu[15:0] = (io_sync == 1'b0) ?
-                       cpu_wdata[(count*16) +: 16] :
-                       16'hzzzz;
+    // The FPGA never drives the bus during a write, and idle has to be
+    // 'z as well or we fight the RPI while it sets up beat 0
+    assign cpu[15:0] = 16'hzzzz;
 
     // Upper bits must ALWAYS be 'z'
     assign cpu[17:16] = 2'bzz;
@@ -46,13 +55,34 @@ module bus(
     // Use pclk_tick instead of posedge pclk
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
-            cpu_rdata <= 32'b0;
-            count     <= 1'b0;
-        end else if (pclk_tick) begin
-            if (io_sync) begin
-                cpu_rdata[(count*16) +: 16] <= cpu[15:0];
+            cpu_addr   <= 32'b0;
+            cpu_rdata  <= 32'b0;
+            cpu_valid  <= 1'b0;
+            beat       <= 2'b00;
+            frame_done <= 1'b0;
+        end else begin
+            cpu_valid <= 1'b0;      // default, strobe is one clk wide
+
+            if (!io_sync) begin
+                // idle, hold the frame in reset so every burst
+                // starts aligned on beat 0
+                beat       <= 2'b00;
+                frame_done <= 1'b0;
+            end else if (pclk_tick && !frame_done) begin
+                // the RPI holds each beat for the whole pclk period,
+                // so the wires are quiet when we sample them here
+                if (beat[1])
+                    cpu_rdata[beat[0]*16 +: 16] <= cpu[15:0];
+                else
+                    cpu_addr[beat[0]*16 +: 16]  <= cpu[15:0];
+
+                if (beat == 2'b11) begin
+                    frame_done <= 1'b1; // ignore any extra pclk in this frame
+                    cpu_valid  <= 1'b1;
+                end else begin
+                    beat <= beat + 2'd1;
+                end
             end
-            count <= ~count;
         end
     end
 
