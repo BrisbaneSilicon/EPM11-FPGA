@@ -137,7 +137,7 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
     assign cpu_ready    = 1'b1;
     assign cpu_rdata    = 0;
 
-
+    
     // NOTE: HyperRAM
     // ------------------
 
