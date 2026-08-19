@@ -36,6 +36,7 @@ function Invoke-Sim {
 
 $busSources   = @("tb_bus.sv",   "$sv/bus.sv",   "$sv/dff_sync.sv")
 $busV2Sources = @("tb_busV2.sv", "$sv/busV2.sv", "$sv/sync_edge.sv", "$sv/dff_sync.sv")
+$busV3Sources = @("tb_busV3_ddr.sv", "$sv/busV3_ddr.sv", "$sv/sync_edge.sv", "$sv/dff_sync.sv")
 
 switch ($Target) {
     "bus"   { Invoke-Sim "tb_bus"   $busSources }

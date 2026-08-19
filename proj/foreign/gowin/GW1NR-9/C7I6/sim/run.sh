@@ -2,9 +2,10 @@
 #
 # Simulate the host bus interfaces with iverilog.
 #
-#   ./run.sh          both testbenches
-#   ./run.sh bus      write only interface
-#   ./run.sh busV2    write and read interface
+#   ./run.sh          all testbenches
+#   ./run.sh bus       write only interface
+#   ./run.sh busV2     write and read interface
+#   ./run.sh busV3     double data rate interface
 #
 set -e
 cd "$(dirname "$0")"
@@ -25,9 +26,16 @@ run_busV2() {
     vvp "$out/tb_busV2.vvp"
 }
 
+run_busV3() {
+    echo "### tb_busV3_ddr, double data rate interface ###"
+    iverilog -g2012 -o "$out/tb_busV3_ddr.vvp" tb_busV3_ddr.sv $sv/busV3_ddr.sv $sv/sync_edge.sv $sv/dff_sync.sv
+    vvp "$out/tb_busV3_ddr.vvp"
+}
+
 case "${1:-all}" in
     bus)   run_bus ;;
     busV2) run_busV2 ;;
-    all)   run_bus; echo; run_busV2 ;;
-    *)     echo "usage: $0 [bus|busV2]" >&2; exit 1 ;;
+    busV3) run_busV3 ;;
+    all)   run_bus; echo; run_busV2; echo; run_busV3 ;;
+    *)     echo "usage: $0 [bus|busV2|busV3]" >&2; exit 1 ;;
 esac
