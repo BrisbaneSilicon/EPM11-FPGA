@@ -25,8 +25,6 @@
 
 `timescale 1ns/1ps
 
-Test git text yay
-
 module top #(
     parameter reg   [(8*VERSION_CHARS)-1:0]     VERSION,
     parameter int                               CLK_FREQUENCY_MHZ,
@@ -42,7 +40,9 @@ module top #(
 
     output  reg                 led,
 
-    inout   reg                 cpu,
+    inout   wire    [17:0]      cpu,
+        // NOTE: [15:0] data, [16] pclk,
+        // [17] io. See busV2.sv.
 
     output  [CS_WIDTH-1:0]      psram_ck,
     output  [CS_WIDTH-1:0]      psram_ck_n,
@@ -83,11 +83,27 @@ module top #(
     input       [3:0]           ram_wstrb,
     output  reg [31:0]          ram_rdata,
     input                       ram_valid,
-    output  reg                 ram_ready
+    output  reg                 ram_ready,
+
+
+    // -------------- ela probes --------------
+    // NOTE: widths are mirrored in the
+    // autogen top wrapper - keep in sync.
+
+    input                           watch_clear,
+        // NOTE: from the ELA's EIO, re-zeroes
+        // the watched words over JTAG.
+
+    output      [PROBE_BUS_W-1:0]   probe_bus,
+    output      [PROBE_WATCH_W-1:0] probe_watch,
+    output                          probe_qualifier
 );
 localparam int DQ_WIDTH         = 16;
 localparam int CS_WIDTH         = 2;
 localparam int VERSION_CHARS    = 36;
+localparam int PROBE_BUS_W      = 104;
+localparam int PROBE_WATCH_W    = 128;
+localparam int WATCH_COUNT      = 4;
 localparam int MAX_IO_PER_CORE  = 16;
 localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
 
@@ -119,6 +135,13 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
     wire    [0:0]           i_mbus_sram_valid;
     reg     [0:0]           i_mbus_sram_ready;
 
+    wire    [31:0]          i_bus_addr;
+    wire    [31:0]          i_bus_wdata;
+    wire    [31:0]          i_bus_rdata;
+    wire                    i_bus_wvalid;
+    wire                    i_bus_ren;
+    wire    [19:0]          i_bus_dbg;
+
 
 
     // ----------------------------------------------
@@ -130,14 +153,65 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
     // Interface
     // ------------------
 
-    // TODO: implement CPU bus...
+    // The RPI is the master on the cpu pads. busV2 turns its 4-beat pclk
+    // burst into one flat 32-bit address / 32-bit data request.
+    //
+    // Watch the naming: busV2 is named from the RPI's point of view, so
+    // its 'cpu_rdata' is what the RPI WROTE to us and its 'cpu_wdata' is
+    // what we hand BACK on a read. Locally we name them from the fabric
+    // side instead, hence the swap below.
 
-    assign cpu          = 'z;
+    busV2 busV2_inst (
+        .cpu                    (cpu),
+
+        .cpu_wdata              (i_bus_rdata),
+        .cpu_addr               (i_bus_addr),
+        .cpu_rdata              (i_bus_wdata),
+        .cpu_valid              (i_bus_wvalid),
+        .cpu_ren                (i_bus_ren),
+
+        .clk                    (i_sysclk),
+        .rst_n                  (i_soft_reset_n),
+
+        .dbg                    (i_bus_dbg)
+    );
 
     assign cpu_ready    = 1'b1;
     assign cpu_rdata    = 0;
+        // NOTE: the user-facing cpu_* ports
+        // are a separate bus, still unused.
 
-    
+
+    // NOTE: Watched
+    // memory locations
+    // ------------------
+
+    cpu_watch #(
+        .WATCH_COUNT            (WATCH_COUNT),
+        .PROBE_BUS_W            (PROBE_BUS_W),
+        .PROBE_WATCH_W          (PROBE_WATCH_W)
+    ) cpu_watch_inst (
+        .clk                    (i_sysclk),
+        .rst_n                  (i_soft_reset_n),
+
+        .bus_addr               (i_bus_addr),
+        .bus_wdata              (i_bus_wdata),
+        .bus_wvalid             (i_bus_wvalid),
+        .bus_ren                (i_bus_ren),
+        .bus_rdata              (i_bus_rdata),
+        .bus_dbg                (i_bus_dbg),
+
+        .pclk_async             (cpu[16]),
+        .io_async               (cpu[17]),
+
+        .watch_clear            (watch_clear),
+
+        .probe_bus              (probe_bus),
+        .probe_watch            (probe_watch),
+        .probe_qualifier        (probe_qualifier)
+    );
+
+
     // NOTE: HyperRAM
     // ------------------
 

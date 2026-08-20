@@ -6,7 +6,15 @@ module busV2(
     output reg         cpu_valid,   // one clk strobe, write burst complete
     output reg         cpu_ren,     // one clk strobe, read address is ready
     input  wire        clk,         // FPGA fabric clock
-    input  wire        rst_n        // FPGA reset
+    input  wire        rst_n,       // FPGA reset
+
+    // Observation only, for the ELA. Nothing in here feeds back into the
+    // burst logic, so leaving it unconnected changes nothing.
+    //   [15:0]  data_in    the beat as we sampled it
+    //   [17:16] beat       burst position, 0..3
+    //   [18]    is_read    direction latched at beat 0
+    //   [19]    bus_drive  we are driving cpu[15:0]
+    output wire [19:0] dbg
 );
 
     // io picks the direction, sampled on beat 0 of the burst.
@@ -95,6 +103,8 @@ module busV2(
 
     // Upper bits must ALWAYS be 'z'
     assign cpu[17:16] = 2'bzz;
+
+    assign dbg = {bus_drive, is_read, beat, data_in};
 
     // Use pclk_tick instead of posedge pclk
     always_ff @(posedge clk or negedge rst_n) begin

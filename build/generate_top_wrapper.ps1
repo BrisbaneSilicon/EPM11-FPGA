@@ -157,6 +157,16 @@ localparam CS_WIDTH         = 2;
     reg                 i_top_led;
     reg         [2:0]   i_ela_led;
 
+    localparam PROBE_BUS_W   = 104;
+    localparam PROBE_WATCH_W = 128;
+        // NOTE: must match the localparams
+        // of the same name in top.sv
+
+    wire [PROBE_BUS_W-1:0]      i_probe_bus;
+    wire [PROBE_WATCH_W-1:0]    i_probe_watch;
+    wire                        i_probe_qualifier;
+    wire [7:0]                  i_eio_out;
+
 
     // ----------------------------------------------
     //  Implementation
@@ -217,7 +227,16 @@ localparam CS_WIDTH         = 2;
         .ram_wstrb                  (i_ram_wstrb),
         .ram_rdata                  (i_ram_rdata),
         .ram_valid                  (i_ram_valid),
-        .ram_ready                  (i_ram_ready)
+        .ram_ready                  (i_ram_ready),
+
+
+        // -------------- ela probes --------------
+
+        .watch_clear                (i_eio_out[0]),
+
+        .probe_bus                  (i_probe_bus),
+        .probe_watch                (i_probe_watch),
+        .probe_qualifier            (i_probe_qualifier)
     );
 
 
@@ -264,31 +283,29 @@ localparam CS_WIDTH         = 2;
             //  Internal signals (ELA-internal)
             // ----------------------------------------------
 
-            localparam ELA_SAMPLE_WIDTH = 8;
+            // SAMPLE_W is the width captured per sample. NUM_CHANNELS is
+            // a build-time MUX, not extra width - it gives N separate
+            // SAMPLE_W buses and you capture one of them, chosen at arm
+            // time. So the whole bus goes in SAMPLE_W, channels stay 1.
+
+            localparam ELA_SAMPLE_WIDTH = PROBE_BUS_W + 16; // 120, byte aligned
             localparam ELA_SAMPLE_DEPTH = 64;
-            localparam ELA_CHANNELS     = 6;
-                // NOTE: modify probe dimensions as required...
+            localparam ELA_CHANNELS     = 1;
+                // NOTE: user.sv's own 16-bit probe rides
+                // in the top bytes, [119:104], so the demo
+                // probe still works alongside the bus.
 
             reg                                         i_sysclk_reset;
 
             reg [1:0]                                   i_buttons;
-            reg [ELA_SAMPLE_WIDTH-1:0]                  i_counter;
-
-            reg [(ELA_SAMPLE_WIDTH*ELA_CHANNELS)-1:0]   i_probe;
-
 
             always @(posedge i_sysclk) begin
                 if (i_sysclk_resetn == 1'b0) begin
-                    i_counter   <= 0;
                     i_buttons   <= 0;
                 end else begin
-                    i_counter   <= i_counter + 1'b1;
                     i_buttons   <= ~pad_user_buttons_n;
                 end
             end
-
-            assign i_probe = { 7'b0000000, i_buttons[1], i_counter, i_user_probe};
-                // NOTE: modify probe regs as required...
 
             // ----------------------------------------------
             //  Embedded Logic Analyser
@@ -300,7 +317,22 @@ localparam CS_WIDTH         = 2;
                 .SAMPLE_W       (ELA_SAMPLE_WIDTH),
                 .DEPTH          (ELA_SAMPLE_DEPTH),
                 .NUM_CHANNELS   (ELA_CHANNELS),
-                .EIO_EN         (0)
+
+                .STOR_QUAL      (1),
+                    // NOTE: probe_bus[97] is the qualifier
+                    // bit. Set the host's stor_qual mask and
+                    // value to bit 97 and mode to 1, and the
+                    // buffer only stores pclk edges - which
+                    // is the only way a slow RPI burst fits
+                    // in 64 samples of a 51 MHz capture.
+
+                .EIO_EN         (1),
+                .EIO_IN_W       (PROBE_WATCH_W),
+                .EIO_OUT_W      (8)
+                    // NOTE: the four watched words are slow
+                    // state, not waveform. EIO reads them on
+                    // demand for no BSRAM, instead of storing
+                    // the same value 64 times over.
             ) u_ela (
                 .clk            (i_sysclk),
                     // NOTE: this clock must be
@@ -310,12 +342,12 @@ localparam CS_WIDTH         = 2;
 
                 .sample_clk     (i_sysclk),
                 .sample_rst     (i_sysclk_reset),
-                .probe_in       (i_probe),
+                .probe_in       ({i_user_probe, i_probe_bus}),
 
-                .eio_probe_in   (0),
-                .eio_probe_out  (),
-                    // NOTE: external trigger ports
-                    // tie off if not used
+                .eio_probe_in   (i_probe_watch),
+                .eio_probe_out  (i_eio_out),
+                    // NOTE: eio_out[0] re-zeroes the
+                    // watched words over JTAG.
 
                 .tms_pad_i      (tms_pad_i),
                 .tck_pad_i      (tck_pad_i),
@@ -355,6 +387,11 @@ localparam CS_WIDTH         = 2;
             assign tdo_pad_o = 1'b0;
 
             assign pad_led_n = ~i_top_led;
+
+            assign i_eio_out = 8'h00;
+                // NOTE: no ELA, so nothing drives
+                // the EIO outputs - keep watch_clear
+                // from floating.
         end
     endgenerate
 

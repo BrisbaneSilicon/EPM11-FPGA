@@ -34,13 +34,15 @@ function Invoke-Sim {
     if ($LASTEXITCODE -ne 0) { throw "vvp failed for $Name" }
 }
 
-$busSources   = @("tb_bus.sv",   "$sv/bus.sv",   "$sv/dff_sync.sv")
-$busV2Sources = @("tb_busV2.sv", "$sv/busV2.sv", "$sv/sync_edge.sv", "$sv/dff_sync.sv")
-$busV3Sources = @("tb_busV3_ddr.sv", "$sv/busV3_ddr.sv", "$sv/sync_edge.sv", "$sv/dff_sync.sv")
+$busSources   = @("tb_bus.sv",   "$sv/bus.sv",   "$sv/bs_dff_sync.sv")
+$busV2Sources = @("tb_busV2.sv", "$sv/busV2.sv", "$sv/sync_edge.sv", "$sv/bs_dff_sync.sv")
+$busV3Sources = @("tb_busV3_ddr.sv", "$sv/busV3_ddr.sv", "$sv/sync_edge.sv", "$sv/bs_dff_sync.sv")
+$watchSources = @("tb_cpu_watch.sv", "$sv/busV2.sv", "$sv/cpu_watch.sv", "$sv/sync_edge.sv", "$sv/bs_dff_sync.sv")
 
 switch ($Target) {
     "bus"   { Invoke-Sim "tb_bus"   $busSources }
     "busV2" { Invoke-Sim "tb_busV2" $busV2Sources }
-    "all"   { Invoke-Sim "tb_bus" $busSources; Write-Host ""; Invoke-Sim "tb_busV2" $busV2Sources }
-    default { Write-Error "usage: .\run.ps1 [bus|busV2]" }
+    "watch" { Invoke-Sim "tb_cpu_watch" $watchSources }
+    "all"   { Invoke-Sim "tb_bus" $busSources; Write-Host ""; Invoke-Sim "tb_busV2" $busV2Sources; Write-Host ""; Invoke-Sim "tb_cpu_watch" $watchSources }
+    default { Write-Error "usage: .\run.ps1 [bus|busV2|watch]" }
 }

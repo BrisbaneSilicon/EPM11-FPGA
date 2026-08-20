@@ -11,7 +11,7 @@ module sync_edge (
     logic sync_d;
 
     // Reuse the existing synchroniser, this only adds the edge detect
-    dff_sync sync_inst(.clk(clk), .rst_n(rst_n), .async_in(async_in), .sync_out(sync_out));
+    bs_dff_sync sync_inst(.clk(clk), .rst_n(rst_n), .async_in(async_in), .sync_out(sync_out));
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n)

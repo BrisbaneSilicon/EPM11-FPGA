@@ -25,11 +25,11 @@ module bus(
     wire io_sync;
 
     // Synchronise pclk into FPGA clock domain
-    dff_sync sync_pclk(.clk(clk), .rst_n(rst_n), .async_in(pclk_raw), .sync_out(pclk_sync));
+    bs_dff_sync sync_pclk(.clk(clk), .rst_n(rst_n), .async_in(pclk_raw), .sync_out(pclk_sync));
 
     // Synchronise io into FPGA clock domain, just for now... 
     // might remove in future
-    dff_sync sync_io(.clk(clk), .rst_n(rst_n), .async_in(io_raw), .sync_out(io_sync));
+    bs_dff_sync sync_io(.clk(clk), .rst_n(rst_n), .async_in(io_raw), .sync_out(io_sync));
 
     // Edge detect pclk_sync to create a clean tick
     reg pclk_d;
