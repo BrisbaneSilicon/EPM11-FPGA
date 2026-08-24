@@ -1,0 +1,17 @@
+{
+  "format": "fpgacapzero.probes.v1",
+  "core": "ela",
+  "sample_width": 128,
+  "sample_clock_hz": 51000000,
+  "probes": [
+    { "name": "pclk",     "width": 1,  "lsb": 0 },
+    { "name": "io",       "width": 1,  "lsb": 1 },
+    { "name": "beat",     "width": 2,  "lsb": 2 },
+    { "name": "wvalid",   "width": 1,  "lsb": 4 },
+    { "name": "reserved", "width": 11, "lsb": 5 },
+    { "name": "data_bus", "width": 16, "lsb": 16 },
+    { "name": "addr",     "width": 32, "lsb": 32 },
+    { "name": "wdata",    "width": 32, "lsb": 64 },
+    { "name": "rdata",    "width": 32, "lsb": 96 }
+  ]
+}

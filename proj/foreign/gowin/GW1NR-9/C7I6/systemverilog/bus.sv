@@ -1,88 +1,143 @@
-module bus(
-    inout  wire [17:0] cpu,
-    input  wire [31:0] cpu_wdata,   // for the read direction, not used yet
-    output reg  [31:0] cpu_addr,
-    output reg  [31:0] cpu_rdata,
-    output reg         cpu_valid,   // one clk strobe, burst complete
-    input  wire        clk,         // FPGA fabric clock
-    input  wire        rst_n        // FPGA reset
+// -------------------------------------------------------------------------
+// COPYRIGHT © 2025, BRISBANE SILICON, PTY LTD.
+//
+// THE SOURCE CODE CONTAINED HEREIN IS PROVIDED ON AN "AS IS" BASIS.
+// BRISBANE SILICON, PTY LTD. DISCLAIMS ANY AND ALL WARRANTIES,
+// WHETHER EXPRESS, IMPLIED, OR STATUTORY, INCLUDING ANY IMPLIED
+// WARRANTIES OF MERCHANTABILITY OR OF FITNESS FOR A PARTICULAR PURPOSE.
+// IN NO EVENT SHALL BRISBANE SILICON, PTY LTD. BE LIABLE FOR ANY
+// INCIDENTAL, PUNITIVE, OR CONSEQUENTIAL DAMAGES OF ANY KIND WHATSOEVER
+// ARISING FROM THE USE OF THIS SOURCE CODE.
+//
+// THIS DISCLAIMER OF WARRANTY EXTENDS TO THE USER OF THIS SOURCE CODE
+// AND USER'S CUSTOMERS, EMPLOYEES, AGENTS, TRANSFEREES, SUCCESSORS,
+// AND ASSIGNS.
+//
+// THIS IS NOT A GRANT OF PATENT RIGHTS
+//
+// -------------------------------------------------------------------------
+// DESCRIPTION : Host bus slave, write only. Superseded by busV2, which
+//               adds the read direction. Kept for reference.
+//
+// -------------------------------------------------------------------------
+// SPECIFICATION :
+//
+// A write burst is 4 cpu_clk cycles:
+//   beat 0 : addr [15:0]
+//   beat 1 : addr [31:16]
+//   beat 2 : data [15:0]
+//   beat 3 : data [31:16]
+//
+// cpu_wr high frames the burst - the host raises it before beat 0 and
+// drops it after beat 3.
+//
+// Nothing here ever drives the data lines, so they are a plain input
+// rather than a tri-state we would only ever park at 'z'.
+//
+// -------------------------------------------------------------------------
+
+`timescale 1ns/1ps
+
+module bus
+#(
+    parameter int pSYNC_STAGES = 2
+)
+(
+    // ---------------- clocking ----------------
+
+    input   logic           clk,
+    input   logic           srst,
+
+    // ---------------- host bus, asynchronous ----------------
+
+    input   logic   [15:0]  cpu_data_async,
+    input   logic           cpu_clk_async,
+    input   logic           cpu_wr_async,
+
+    // ---------------- fabric master ----------------
+
+    output  logic   [31:0]  m_addr,
+    output  logic   [31:0]  m_wrdata,
+    output  logic           m_wvalid
+        // NOTE: one clk strobe, burst complete
 );
 
-    // A write burst is 4 pclk cycles:
-    //   beat 0 : addr [15:0]
-    //   beat 1 : addr [31:16]
-    //   beat 2 : data [15:0]
-    //   beat 3 : data [31:16]
-    // io high frames the burst, the RPI raises it before beat 0
-    // and drops it after beat 3.
+    // ----------------------------------------------
+    //  Internal signals
+    // ----------------------------------------------
 
-    // Raw asynchronous signals from the bus
-    wire pclk_raw = cpu[16];
-    wire io_raw   = cpu[17];
+    logic           i_cpu_clk_sync;
+    logic           i_cpu_clk_rise;
+    logic           i_cpu_wr_sync;
 
-    // Synchronized versions
-    wire pclk_sync;
-    wire io_sync;
+    logic   [1:0]   i_beat;
+    logic           i_frame_done;
 
-    // Synchronise pclk into FPGA clock domain
-    bs_dff_sync sync_pclk(.clk(clk), .rst_n(rst_n), .async_in(pclk_raw), .sync_out(pclk_sync));
 
-    // Synchronise io into FPGA clock domain, just for now... 
-    // might remove in future
-    bs_dff_sync sync_io(.clk(clk), .rst_n(rst_n), .async_in(io_raw), .sync_out(io_sync));
+    // ----------------------------------------------
+    //  Implementation
+    // ----------------------------------------------
 
-    // Edge detect pclk_sync to create a clean tick
-    reg pclk_d;
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n)
-            pclk_d <= 1'b0;
-        else
-            pclk_d <= pclk_sync;
-    end
+    sync_edge #(
+        .pSYNC_STAGES   (pSYNC_STAGES)
+    ) sync_edge_cpu_clk_inst (
+        .clk            (clk),
+        .srst           (srst),
 
-    wire pclk_tick = pclk_sync & ~pclk_d;   // rising edge pulse
+        .sync           (i_cpu_clk_sync),
+        .rise           (i_cpu_clk_rise),
+        .fall           (),
+        .edge_any       (),
 
-    reg [1:0] beat       = 2'b00;
-    reg       frame_done = 1'b0;
+        .async          (cpu_clk_async)
+    );
 
-    // The FPGA never drives the bus during a write, and idle has to be
-    // 'z as well or we fight the RPI while it sets up beat 0
-    assign cpu[15:0] = 16'hzzzz;
+    bs_dff_sync #(
+        .pSYNC_STAGES   (pSYNC_STAGES)
+    ) bs_dff_sync_cpu_wr_inst (
+        .clk            (clk),
+        .srst           (srst),
+        .sync           (i_cpu_wr_sync),
 
-    // Upper bits must ALWAYS be 'z'
-    assign cpu[17:16] = 2'bzz;
+        .async          (cpu_wr_async)
+    );
 
-    // Use pclk_tick instead of posedge pclk
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            cpu_addr   <= 32'b0;
-            cpu_rdata  <= 32'b0;
-            cpu_valid  <= 1'b0;
-            beat       <= 2'b00;
-            frame_done <= 1'b0;
-        end else begin
-            cpu_valid <= 1'b0;      // default, strobe is one clk wide
+    always @(posedge clk) begin
 
-            if (!io_sync) begin
-                // idle, hold the frame in reset so every burst
-                // starts aligned on beat 0
-                beat       <= 2'b00;
-                frame_done <= 1'b0;
-            end else if (pclk_tick && !frame_done) begin
-                // the RPI holds each beat for the whole pclk period,
-                // so the wires are quiet when we sample them here
-                if (beat[1])
-                    cpu_rdata[beat[0]*16 +: 16] <= cpu[15:0];
-                else
-                    cpu_addr[beat[0]*16 +: 16]  <= cpu[15:0];
+        m_wvalid <= 1'b0;
+            // NOTE: default, strobe is one clk wide
 
-                if (beat == 2'b11) begin
-                    frame_done <= 1'b1; // ignore any extra pclk in this frame
-                    cpu_valid  <= 1'b1;
-                end else begin
-                    beat <= beat + 2'd1;
-                end
+        if (i_cpu_wr_sync == 1'b0) begin
+            // idle, hold the frame in reset so every burst
+            // starts aligned on beat 0
+            i_beat       <= 2'b00;
+            i_frame_done <= 1'b0;
+        end else if ((i_cpu_clk_rise == 1'b1) && (i_frame_done == 1'b0)) begin
+            // the host holds each beat for the whole cpu_clk period,
+            // so the wires are quiet when we sample them here
+            if (i_beat[1] == 1'b1) begin
+                m_wrdata[i_beat[0]*16 +: 16] <= cpu_data_async;
+            end else begin
+                m_addr[i_beat[0]*16 +: 16]   <= cpu_data_async;
             end
+
+            if (i_beat == 2'b11) begin
+                i_frame_done <= 1'b1;
+                    // NOTE: ignore any extra cpu_clk in this frame
+                m_wvalid     <= 1'b1;
+            end else begin
+                i_beat <= i_beat + 2'd1;
+            end
+        end
+
+        // NOTE: handle reset here in order to
+        // reduce control sets...
+        if (srst == 1'b1) begin
+            m_addr       <= 32'h0000_0000;
+            m_wrdata     <= 32'h0000_0000;
+            m_wvalid     <= 1'b0;
+            i_beat       <= 2'b00;
+            i_frame_done <= 1'b0;
         end
     end
 

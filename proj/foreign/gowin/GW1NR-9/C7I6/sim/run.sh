@@ -17,7 +17,7 @@ mkdir -p "$out"
 
 run_bus() {
     echo "### tb_bus, write only interface ###"
-    iverilog -g2012 -o "$out/tb_bus.vvp" tb_bus.sv $sv/bus.sv $sv/bs_dff_sync.sv
+    iverilog -g2012 -o "$out/tb_bus.vvp" tb_bus.sv $sv/bus.sv $sv/sync_edge.sv $sv/bs_dff_sync.sv
     vvp "$out/tb_bus.vvp"
 }
 

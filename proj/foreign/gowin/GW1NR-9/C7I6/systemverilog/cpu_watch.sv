@@ -1,21 +1,3 @@
-// -------------------------------------------------------------------------
-// COPYRIGHT © 2025, BRISBANE SILICON, PTY LTD.
-//
-// THE SOURCE CODE CONTAINED HEREIN IS PROVIDED ON AN "AS IS" BASIS.
-// BRISBANE SILICON, PTY LTD. DISCLAIMS ANY AND ALL WARRANTIES,
-// WHETHER EXPRESS, IMPLIED, OR STATUTORY, INCLUDING ANY IMPLIED
-// WARRANTIES OF MERCHANTABILITY OR OF FITNESS FOR A PARTICULAR PURPOSE.
-// IN NO EVENT SHALL BRISBANE SILICON, PTY LTD. BE LIABLE FOR ANY
-// INCIDENTAL, PUNITIVE, OR CONSEQUENTIAL DAMAGES OF ANY KIND WHATSOEVER
-// ARISING FROM THE USE OF THIS SOURCE CODE.
-//
-// THIS DISCLAIMER OF WARRANTY EXTENDS TO THE USER OF THIS SOURCE CODE
-// AND USER'S CUSTOMERS, EMPLOYEES, AGENTS, TRANSFEREES, SUCCESSORS,
-// AND ASSIGNS.
-//
-// THIS IS NOT A GRANT OF PATENT RIGHTS
-//
-// -------------------------------------------------------------------------
 // DESCRIPTION :
 //
 // Four probe-visible memory words sitting behind the host bus, plus the
@@ -29,29 +11,44 @@
 // ignore the upper half and so hide a broken beat 1 - the exact match is
 // what proves BOTH address beats landed.
 //
-// probe_bus goes to the ELA (fcapz_ela_gowin probe_in, SAMPLE_W=104) and
-// is byte aligned so a raw hex sample decodes by eye:
+// probe_bus goes to the ELA. It is four aligned 32-bit words, which is how
+// the host reads samples back, so a raw hex capture splits cleanly:
 //
-//   byte  0..3    [31:0]      bus_addr        address being accessed
-//   byte  4..7    [63:32]     bus_wdata       value to be stored
-//   byte  8..9    [79:64]     bus_data_in     raw beat, as busV2 sampled it
-//   byte 10       [80]        pclk            Pclk, synchronised
-//                 [81]        io              IO,   synchronised
-//                 [83:82]     beat            burst position 0..3
-//                 [84]        is_read         direction latched at beat 0
-//                 [85]        bus_drive       FPGA is driving cpu[15:0]
-//                 [86]        bus_wvalid      write burst complete, 1 clk
-//                 [87]        bus_ren         read address ready, 1 clk
-//   byte 11       [91:88]     watch_we        watch word actually written
-//                 [95:92]     watch_hit       address decode, combinational
-//   byte 12       [96]        watch_miss      completed write matched nothing
-//                 [97]        qualifier       storage qualification bit
-//                 [103:98]    reserved
+//   word 0   [0]         pclk        Pclk, synchronised
+//            [1]         io          IO,   synchronised
+//            [3:2]       beat        burst position 0..3
+//            [4]         wvalid      write burst complete, one clk wide
+//            [15:5]      reserved    keeps the words below aligned
+//            [31:16]     data_bus    the 16 wires, as busV2 sampled them
+//   word 1   [63:32]     addr        address being accessed
+//   word 2   [95:64]     wdata       value the host is writing
+//   word 3   [127:96]    rdata       value we are handing back on a read
 //
-// probe_watch goes to the EIO (eio_probe_in) rather than the ELA. The four
-// words are slow state, not waveform - storing them 64 deep would burn
-// BSRAM to hold the same value 64 times. EIO reads them on demand for
-// free.
+// The ordering is not cosmetic. fcapz_ela.v zero-extends the trigger and
+// storage-qualification value and mask from 32-bit registers when
+// SAMPLE_W > 32 (see its g_sq_wide branch), so ONLY word 0 can be matched
+// on. Everything worth triggering or qualifying on - pclk, io, beat,
+// wvalid and the raw bus - therefore lives there, and the wide fields sit
+// above it.
+//
+// wvalid is the natural trigger for catching a write:
+//
+//      --trigger-value 16 --trigger-mask 0x10
+//
+// (decimal for the value: the fcapz CLI parses --trigger-value with a bare
+// int and rejects 0x, unlike every other flag beside it.)
+//
+// In particular, capture is qualified with CHANGED on pclk:
+//
+//      --stor-qual-mode 8 --stor-qual-mask 0x01
+//
+// which stores one sample per pclk edge. A free-running 51 MHz capture 64
+// deep spans only 1.25 us, which a host bit-banging pclk will never fit a
+// burst into.
+//
+// probe_watch goes to the EIO rather than the ELA. The four words are slow
+// state, not waveform - storing them 64 deep would burn BSRAM holding the
+// same value 64 times. EIO reads them on demand for free.
 //
 // -------------------------------------------------------------------------
 
@@ -59,7 +56,7 @@
 
 module cpu_watch #(
     parameter int WATCH_COUNT   = 4,
-    parameter int PROBE_BUS_W   = 104,
+    parameter int PROBE_BUS_W   = 128,
     parameter int PROBE_WATCH_W = 128
 ) (
     input                               clk,
@@ -77,8 +74,11 @@ module cpu_watch #(
     output  reg [31:0]                  bus_rdata,
 
     input       [19:0]                  bus_dbg,
-        // NOTE: busV2 internals, see its
-        // dbg port for the layout.
+        // NOTE: busV2 internals, see its dbg
+        // port. Only the beat counter and the
+        // sampled bus are used here; the rest
+        // of the bundle is left for whoever
+        // needs it next.
 
 
     // -------------- raw pads --------------
@@ -98,8 +98,7 @@ module cpu_watch #(
     // -------------- probes --------------
 
     output      [PROBE_BUS_W-1:0]       probe_bus,
-    output      [PROBE_WATCH_W-1:0]     probe_watch,
-    output                              probe_qualifier
+    output      [PROBE_WATCH_W-1:0]     probe_watch
 );
 
     // Picked so every meaningful address bit is seen both low and high,
@@ -127,32 +126,23 @@ module cpu_watch #(
 
     reg     [WATCH_COUNT-1:0] [31:0]    i_watch_data;
     wire    [WATCH_COUNT-1:0]           i_watch_hit;
-    reg     [WATCH_COUNT-1:0]           i_watch_we;
-    wire                                i_watch_miss;
 
     wire                                i_pclk_sync;
     wire                                i_io_sync;
-    reg                                 i_pclk_d;
 
     reg                                 i_clear_p1;
     reg                                 i_clear_p0;
 
-    wire    [15:0]                      i_dbg_data_in;
+    wire    [15:0]                      i_dbg_data_bus;
     wire    [1:0]                       i_dbg_beat;
-    wire                                i_dbg_is_read;
-    wire                                i_dbg_bus_drive;
-
-    wire                                i_qualifier;
 
 
     // ----------------------------------------------
     //  Implementation
     // ----------------------------------------------
 
-    assign i_dbg_data_in   = bus_dbg[15:0];
-    assign i_dbg_beat      = bus_dbg[17:16];
-    assign i_dbg_is_read   = bus_dbg[18];
-    assign i_dbg_bus_drive = bus_dbg[19];
+    assign i_dbg_data_bus = bus_dbg[15:0];
+    assign i_dbg_beat     = bus_dbg[17:16];
 
     genvar w;
     generate
@@ -160,10 +150,6 @@ module cpu_watch #(
             assign i_watch_hit[w] = (bus_addr == WATCH_ADDR[32*w +: 32]);
         end
     endgenerate
-
-    assign i_watch_miss = bus_wvalid & ~(|i_watch_hit);
-        // NOTE: a completed write that
-        // matched no watched address.
 
     // The EIO drives watch_clear from the JTAG register domain. On this
     // part that domain is i_sysclk already, but resynchronise anyway so
@@ -185,21 +171,14 @@ module cpu_watch #(
             for (wi = 0; wi < WATCH_COUNT; wi = wi + 1) begin
                 i_watch_data[wi] <= 32'h0000_0000;
             end
-            i_watch_we <= 0;
-        end else begin
-            i_watch_we <= 0;
-                // NOTE: default, one clk strobe
-
-            if (i_clear_p0 == 1'b1) begin
-                for (wi = 0; wi < WATCH_COUNT; wi = wi + 1) begin
-                    i_watch_data[wi] <= 32'h0000_0000;
-                end
-            end else if (bus_wvalid == 1'b1) begin
-                for (wi = 0; wi < WATCH_COUNT; wi = wi + 1) begin
-                    if (i_watch_hit[wi] == 1'b1) begin
-                        i_watch_data[wi] <= bus_wdata;
-                        i_watch_we[wi]   <= 1'b1;
-                    end
+        end else if (i_clear_p0 == 1'b1) begin
+            for (wi = 0; wi < WATCH_COUNT; wi = wi + 1) begin
+                i_watch_data[wi] <= 32'h0000_0000;
+            end
+        end else if (bus_wvalid == 1'b1) begin
+            for (wi = 0; wi < WATCH_COUNT; wi = wi + 1) begin
+                if (i_watch_hit[wi] == 1'b1) begin
+                    i_watch_data[wi] <= bus_wdata;
                 end
             end
         end
@@ -249,43 +228,16 @@ module cpu_watch #(
         .sync_out   (i_io_sync)
     );
 
-    always @(posedge clk) begin
-        if (rst_n == 1'b0) begin
-            i_pclk_d <= 1'b0;
-        end else begin
-            i_pclk_d <= i_pclk_sync;
-        end
-    end
-
-    // A free-running 51 MHz capture 64 samples deep only spans 1.25 us,
-    // which an RPI bit-banging pclk will never fit a burst into. Store a
-    // sample per pclk edge instead and 64 samples covers 16 whole bursts,
-    // however slowly the host drives them. The bit rides inside the
-    // sample because that is what the ELA's storage qualification
-    // comparator matches on - it has no separate qualifier input.
-
-    assign i_qualifier = (i_pclk_sync ^ i_pclk_d)
-                       | bus_wvalid
-                       | bus_ren;
-
-    assign probe_qualifier = i_qualifier;
-
     assign probe_bus = {
-        6'b000000,          // [103:98] reserved
-        i_qualifier,        // [97]     storage qualification bit
-        i_watch_miss,       // [96]     write matched nothing
-        i_watch_hit,        // [95:92]  address decode, combinational
-        i_watch_we,         // [91:88]  watch word actually written
-        bus_ren,            // [87]     read address ready
-        bus_wvalid,         // [86]     write burst complete
-        i_dbg_bus_drive,    // [85]     FPGA driving cpu[15:0]
-        i_dbg_is_read,      // [84]     direction latched at beat 0
-        i_dbg_beat,         // [83:82]  burst position
-        i_io_sync,          // [81]     IO
-        i_pclk_sync,        // [80]     Pclk
-        i_dbg_data_in,      // [79:64]  raw beat as busV2 sampled it
-        bus_wdata,          // [63:32]  value to be stored
-        bus_addr            // [31:0]   address being accessed
+        bus_rdata,          // [127:96] word 3, value handed back on a read
+        bus_wdata,          // [95:64]  word 2, value being written
+        bus_addr,           // [63:32]  word 1, address being accessed
+        i_dbg_data_bus,     // [31:16]  word 0, the 16 wires as sampled
+        11'h000,            // [15:5]   reserved, keeps the words aligned
+        bus_wvalid,         // [4]      write burst complete
+        i_dbg_beat,         // [3:2]    burst position
+        i_io_sync,          // [1]      IO
+        i_pclk_sync         // [0]      Pclk
     };
 
     assign probe_watch = {

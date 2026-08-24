@@ -157,14 +157,13 @@ localparam CS_WIDTH         = 2;
     reg                 i_top_led;
     reg         [2:0]   i_ela_led;
 
-    localparam PROBE_BUS_W   = 104;
+    localparam PROBE_BUS_W   = 128;
     localparam PROBE_WATCH_W = 128;
         // NOTE: must match the localparams
         // of the same name in top.sv
 
     wire [PROBE_BUS_W-1:0]      i_probe_bus;
     wire [PROBE_WATCH_W-1:0]    i_probe_watch;
-    wire                        i_probe_qualifier;
     wire [7:0]                  i_eio_out;
 
 
@@ -187,7 +186,9 @@ localparam CS_WIDTH         = 2;
 
         .led                        (i_top_led),
 
-        .cpu                        (pad_cpu),
+        .cpu_data_async             (pad_cpu[15:0]),
+        .cpu_clk_async              (pad_cpu[16]),
+        .cpu_wr_async               (pad_cpu[17]),
 
         .psram_ck                   (O_psram_ck),
         .psram_ck_n                 (O_psram_ck_n),
@@ -232,11 +233,10 @@ localparam CS_WIDTH         = 2;
 
         // -------------- ela probes --------------
 
-        .watch_clear                (i_eio_out[0]),
+        .watch_clear_async          (i_eio_out[0]),
 
         .probe_bus                  (i_probe_bus),
-        .probe_watch                (i_probe_watch),
-        .probe_qualifier            (i_probe_qualifier)
+        .probe_watch                (i_probe_watch)
     );
 
 
@@ -288,12 +288,24 @@ localparam CS_WIDTH         = 2;
             // SAMPLE_W buses and you capture one of them, chosen at arm
             // time. So the whole bus goes in SAMPLE_W, channels stay 1.
 
-            localparam ELA_SAMPLE_WIDTH = PROBE_BUS_W + 16; // 120, byte aligned
+            // ---- user.sv's own probe: off by default -----------------
+            //
+            // Set ELA_USER_PROBE to 1 to capture user.sv's 16-bit probe
+            // alongside the bus. That is the ONLY edit needed here - the
+            // sample width and the concatenation both follow from it.
+            //
+            // Then add a user_probe entry to prog/epm11_bus.prob so
+            // the host knows how to decode it - name user_probe, width
+            // 16, lsb 128 - and change sample_width there to 144.
+            //
+            // Cost: no extra BSRAM (128 and 144 bits both need 8 blocks),
+            // but readback goes from 4 words per sample to 5.
+
+            localparam ELA_USER_PROBE   = 0;
+
+            localparam ELA_SAMPLE_WIDTH = PROBE_BUS_W + (ELA_USER_PROBE * 16);
             localparam ELA_SAMPLE_DEPTH = 64;
             localparam ELA_CHANNELS     = 1;
-                // NOTE: user.sv's own 16-bit probe rides
-                // in the top bytes, [119:104], so the demo
-                // probe still works alongside the bus.
 
             reg                                         i_sysclk_reset;
 
@@ -307,6 +319,10 @@ localparam CS_WIDTH         = 2;
                 end
             end
 
+            // Built at full width, then sliced. With ELA_USER_PROBE at 0
+            // the slice drops the user probe and synthesis prunes it.
+            wire [PROBE_BUS_W+15:0] i_ela_sample = {i_user_probe, i_probe_bus};
+
             // ----------------------------------------------
             //  Embedded Logic Analyser
             // ----------------------------------------------
@@ -319,12 +335,21 @@ localparam CS_WIDTH         = 2;
                 .NUM_CHANNELS   (ELA_CHANNELS),
 
                 .STOR_QUAL      (1),
-                    // NOTE: probe_bus[97] is the qualifier
-                    // bit. Set the host's stor_qual mask and
-                    // value to bit 97 and mode to 1, and the
-                    // buffer only stores pclk edges - which
-                    // is the only way a slow RPI burst fits
-                    // in 64 samples of a 51 MHz capture.
+                    // NOTE: qualify capture with CHANGED on
+                    // pclk, which is probe_bus[0]:
+                    //
+                    //   --stor-qual-mode 8 --stor-qual-mask 0x01
+                    //
+                    // That stores one sample per pclk edge.
+                    // A free-running 51 MHz capture 64 deep
+                    // spans 1.25 us, which a slow host burst
+                    // will never fit into.
+                    //
+                    // It has to be a LOW bit: fcapz_ela.v
+                    // zero-extends the qualification value
+                    // and mask from 32-bit registers when
+                    // SAMPLE_W > 32, so only bits below 32
+                    // can ever be matched.
 
                 .EIO_EN         (1),
                 .EIO_IN_W       (PROBE_WATCH_W),
@@ -342,7 +367,7 @@ localparam CS_WIDTH         = 2;
 
                 .sample_clk     (i_sysclk),
                 .sample_rst     (i_sysclk_reset),
-                .probe_in       ({i_user_probe, i_probe_bus}),
+                .probe_in       (i_ela_sample[ELA_SAMPLE_WIDTH-1:0]),
 
                 .eio_probe_in   (i_probe_watch),
                 .eio_probe_out  (i_eio_out),

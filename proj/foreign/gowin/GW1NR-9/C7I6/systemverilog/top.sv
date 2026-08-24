@@ -40,9 +40,12 @@ module top #(
 
     output  reg                 led,
 
-    inout   wire    [17:0]      cpu,
-        // NOTE: [15:0] data, [16] pclk,
-        // [17] io. See busV2.sv.
+    inout   wire    [15:0]      cpu_data_async,
+    input                       cpu_clk_async,
+    input                       cpu_wr_async,
+        // NOTE: only the data lines are shared.
+        // The clock and direction are driven by
+        // the host alone. See busV2.sv.
 
     output  [CS_WIDTH-1:0]      psram_ck,
     output  [CS_WIDTH-1:0]      psram_ck_n,
@@ -90,18 +93,17 @@ module top #(
     // NOTE: widths are mirrored in the
     // autogen top wrapper - keep in sync.
 
-    input                           watch_clear,
+    input                           watch_clear_async,
         // NOTE: from the ELA's EIO, re-zeroes
         // the watched words over JTAG.
 
     output      [PROBE_BUS_W-1:0]   probe_bus,
-    output      [PROBE_WATCH_W-1:0] probe_watch,
-    output                          probe_qualifier
+    output      [PROBE_WATCH_W-1:0] probe_watch
 );
 localparam int DQ_WIDTH         = 16;
 localparam int CS_WIDTH         = 2;
 localparam int VERSION_CHARS    = 36;
-localparam int PROBE_BUS_W      = 104;
+localparam int PROBE_BUS_W      = 128;
 localparam int PROBE_WATCH_W    = 128;
 localparam int WATCH_COUNT      = 4;
 localparam int MAX_IO_PER_CORE  = 16;
@@ -136,11 +138,13 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
     reg     [0:0]           i_mbus_sram_ready;
 
     wire    [31:0]          i_bus_addr;
-    wire    [31:0]          i_bus_wdata;
-    wire    [31:0]          i_bus_rdata;
+    wire    [31:0]          i_bus_wrdata;
+    wire    [31:0]          i_bus_rddata;
     wire                    i_bus_wvalid;
     wire                    i_bus_ren;
-    wire    [19:0]          i_bus_dbg;
+
+    wire    [15:0]          i_bus_dbg_data;
+    wire    [1:0]           i_bus_dbg_beat;
 
 
 
@@ -153,27 +157,27 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
     // Interface
     // ------------------
 
-    // The RPI is the master on the cpu pads. busV2 turns its 4-beat pclk
-    // burst into one flat 32-bit address / 32-bit data request.
-    //
-    // Watch the naming: busV2 is named from the RPI's point of view, so
-    // its 'cpu_rdata' is what the RPI WROTE to us and its 'cpu_wdata' is
-    // what we hand BACK on a read. Locally we name them from the fabric
-    // side instead, hence the swap below.
+    // The RPI is the master on the cpu pads. The bus uses a 32 bit address and a 32 bit value.
+    
 
     busV2 busV2_inst (
-        .cpu                    (cpu),
-
-        .cpu_wdata              (i_bus_rdata),
-        .cpu_addr               (i_bus_addr),
-        .cpu_rdata              (i_bus_wdata),
-        .cpu_valid              (i_bus_wvalid),
-        .cpu_ren                (i_bus_ren),
-
         .clk                    (i_sysclk),
-        .rst_n                  (i_soft_reset_n),
+        .srst                   (~i_soft_reset_n),
 
-        .dbg                    (i_bus_dbg)
+        .cpu_data_async         (cpu_data_async),
+        .cpu_clk_async          (cpu_clk_async),
+        .cpu_wr_async           (cpu_wr_async),
+
+        .m_addr                 (i_bus_addr),
+        .m_wrdata               (i_bus_wrdata),
+        .m_wvalid               (i_bus_wvalid),
+        .m_ren                  (i_bus_ren),
+        .m_rddata               (i_bus_rddata),
+
+        .dbg_data               (i_bus_dbg_data),
+        .dbg_beat               (i_bus_dbg_beat),
+        .dbg_is_read            (),
+        .dbg_drive              ()
     );
 
     assign cpu_ready    = 1'b1;
@@ -187,28 +191,28 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
     // ------------------
 
     cpu_watch #(
-        .WATCH_COUNT            (WATCH_COUNT),
-        .PROBE_BUS_W            (PROBE_BUS_W),
-        .PROBE_WATCH_W          (PROBE_WATCH_W)
+        .pWATCH_COUNT           (WATCH_COUNT),
+        .pPROBE_BUS_W           (PROBE_BUS_W),
+        .pPROBE_WATCH_W         (PROBE_WATCH_W)
     ) cpu_watch_inst (
         .clk                    (i_sysclk),
-        .rst_n                  (i_soft_reset_n),
+        .srst                   (~i_soft_reset_n),
 
-        .bus_addr               (i_bus_addr),
-        .bus_wdata              (i_bus_wdata),
-        .bus_wvalid             (i_bus_wvalid),
-        .bus_ren                (i_bus_ren),
-        .bus_rdata              (i_bus_rdata),
-        .bus_dbg                (i_bus_dbg),
+        .s_addr                 (i_bus_addr),
+        .s_wrdata               (i_bus_wrdata),
+        .s_wvalid               (i_bus_wvalid),
+        .s_ren                  (i_bus_ren),
+        .s_rddata               (i_bus_rddata),
 
-        .pclk_async             (cpu[16]),
-        .io_async               (cpu[17]),
+        .dbg_data               (i_bus_dbg_data),
+        .dbg_beat               (i_bus_dbg_beat),
 
-        .watch_clear            (watch_clear),
+        .cpu_clk_async          (cpu_clk_async),
+        .cpu_wr_async           (cpu_wr_async),
+        .watch_clear_async      (watch_clear_async),
 
         .probe_bus              (probe_bus),
-        .probe_watch            (probe_watch),
-        .probe_qualifier        (probe_qualifier)
+        .probe_watch            (probe_watch)
     );
 
 

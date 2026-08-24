@@ -29,12 +29,10 @@ module tb_cpu_watch;
     reg  [15:0] h_data  = 16'h0000;
     reg         h_drive = 1'b0;
 
-    wire [17:0] cpu;
-    assign cpu[17]   = h_io;
-    assign cpu[16]   = h_pclk;
-    assign cpu[15:0] = h_drive ? h_data : 16'hzzzz;
+    wire [15:0] cpu_data;
+    assign cpu_data = h_drive ? h_data : 16'hzzzz;
 
-    pulldown pd [17:0] (cpu);       // as per the .cst
+    pulldown pd [15:0] (cpu_data);      // as per the .cst
 
     // ---- fabric side, names as in top.sv ----
     wire [31:0] i_bus_addr;
@@ -43,61 +41,67 @@ module tb_cpu_watch;
     wire        i_bus_wvalid;
     wire        i_bus_ren;
 
-    wire [103:0] probe_bus;
-    wire [19:0]  i_bus_dbg;
+    wire [127:0] probe_bus;
+    wire [15:0]  i_dbg_data;
+    wire [1:0]   i_dbg_beat;
     reg          watch_clear = 1'b0;
     wire [127:0] probe_watch;
-    wire         probe_qualifier;
 
     busV2 busV2_inst (
-        .cpu        (cpu),
-        .cpu_wdata  (i_bus_rdata),
-        .cpu_addr   (i_bus_addr),
-        .cpu_rdata  (i_bus_wdata),
-        .cpu_valid  (i_bus_wvalid),
-        .cpu_ren    (i_bus_ren),
-        .clk        (clk),
-        .rst_n      (rst_n),
-        .dbg        (i_bus_dbg)
+        .clk            (clk),
+        .srst           (~rst_n),
+
+        .cpu_data_async (cpu_data),
+        .cpu_clk_async  (h_pclk),
+        .cpu_wr_async   (h_io),
+
+        .m_addr         (i_bus_addr),
+        .m_wrdata       (i_bus_wdata),
+        .m_wvalid       (i_bus_wvalid),
+        .m_ren          (i_bus_ren),
+        .m_rddata       (i_bus_rdata),
+
+        .dbg_data       (i_dbg_data),
+        .dbg_beat       (i_dbg_beat),
+        .dbg_is_read    (),
+        .dbg_drive      ()
     );
 
     cpu_watch #(
-        .WATCH_COUNT    (4),
-        .PROBE_BUS_W    (104),
-        .PROBE_WATCH_W  (128)
+        .pWATCH_COUNT       (4),
+        .pPROBE_BUS_W       (128),
+        .pPROBE_WATCH_W     (128)
     ) cpu_watch_inst (
         .clk                (clk),
-        .rst_n              (rst_n),
-        .bus_addr           (i_bus_addr),
-        .bus_wdata          (i_bus_wdata),
-        .bus_wvalid         (i_bus_wvalid),
-        .bus_ren            (i_bus_ren),
-        .bus_rdata          (i_bus_rdata),
-        .bus_dbg            (i_bus_dbg),
-        .pclk_async         (cpu[16]),
-        .io_async           (cpu[17]),
-        .watch_clear        (watch_clear),
+        .srst               (~rst_n),
+
+        .s_addr             (i_bus_addr),
+        .s_wrdata           (i_bus_wdata),
+        .s_wvalid           (i_bus_wvalid),
+        .s_ren              (i_bus_ren),
+        .s_rddata           (i_bus_rdata),
+
+        .dbg_data           (i_dbg_data),
+        .dbg_beat           (i_dbg_beat),
+
+        .cpu_clk_async      (h_pclk),
+        .cpu_wr_async       (h_io),
+        .watch_clear_async  (watch_clear),
+
         .probe_bus          (probe_bus),
-        .probe_watch        (probe_watch),
-        .probe_qualifier    (probe_qualifier)
+        .probe_watch        (probe_watch)
     );
 
     // ---- probe field accessors, mirroring the documented layout ----
-    wire [31:0] pb_addr    = probe_bus[31:0];
-    wire [31:0] pb_wdata   = probe_bus[63:32];
-    wire [15:0] pb_data_in = probe_bus[79:64];
-    wire        pb_pclk    = probe_bus[80];
-    wire        pb_io      = probe_bus[81];
-    wire [1:0]  pb_beat    = probe_bus[83:82];
-    wire        pb_is_read = probe_bus[84];
-    wire        pb_drive   = probe_bus[85];
-    wire        pb_wvalid  = probe_bus[86];
-    wire        pb_ren     = probe_bus[87];
-    wire [3:0]  pb_we      = probe_bus[91:88];
-    wire [3:0]  pb_hit     = probe_bus[95:92];
-    wire        pb_miss    = probe_bus[96];
-    wire        pb_qual    = probe_bus[97];
-    wire [5:0]  pb_rsvd    = probe_bus[103:98];
+    wire        pb_pclk     = probe_bus[0];
+    wire        pb_io       = probe_bus[1];
+    wire [1:0]  pb_beat     = probe_bus[3:2];
+    wire        pb_wvalid   = probe_bus[4];
+    wire [10:0] pb_rsvd     = probe_bus[15:5];
+    wire [15:0] pb_data_bus = probe_bus[31:16];
+    wire [31:0] pb_addr     = probe_bus[63:32];
+    wire [31:0] pb_wdata    = probe_bus[95:64];
+    wire [31:0] pb_rdata    = probe_bus[127:96];
 
     wire [31:0] pw0 = probe_watch[31:0];
     wire [31:0] pw1 = probe_watch[63:32];
@@ -105,13 +109,11 @@ module tb_cpu_watch;
     wire [31:0] pw3 = probe_watch[127:96];
 
     integer errors = 0;
-    integer qual_ticks = 0;
-    always @(posedge clk) if (pb_qual) qual_ticks = qual_ticks + 1;
 
     // ---- contention monitor ----
     integer contention = 0;
     always @(*) begin
-        if (h_drive === 1'b1 && busV2_inst.bus_drive === 1'b1) begin
+        if (h_drive === 1'b1 && busV2_inst.i_bus_drive === 1'b1) begin
             $display("CONTENTION at %0t", $time);
             contention = contention + 1;
         end
@@ -149,11 +151,11 @@ module tb_cpu_watch;
             h_drive = 1'b0;
 
             #(PCLK_LO); h_pclk = 1'b1;
-            #(PCLK_HI/2); data[15:0] = cpu[15:0];
+            #(PCLK_HI/2); data[15:0] = cpu_data;
             #(PCLK_HI/2); h_pclk = 1'b0;
 
             #(PCLK_LO); h_pclk = 1'b1;
-            #(PCLK_HI/2); data[31:16] = cpu[15:0];
+            #(PCLK_HI/2); data[31:16] = cpu_data;
             #(PCLK_HI/2); h_pclk = 1'b0;
 
             #(GAP);
@@ -237,11 +239,21 @@ module tb_cpu_watch;
         host_write(A2, 32'h8000_0001);
         chk_watch("overwrite A2", 32'hFFFF_FFFF, 32'hAAAA_AAAA, 32'h8000_0001, 32'h0123_4567);
 
-        // ---- probe mirrors busV2's internals ----
-        chk("probe beat at idle",    {30'b0, pb_beat},        32'h0);
-        chk("probe drive at idle",   {31'b0, pb_drive},       32'h0);
-        chk("qualifier bit == port", {31'b0, pb_qual},        {31'b0, probe_qualifier});
-        chk("reserved bits zero",    {26'b0, pb_rsvd},        32'h0);
+        // ---- the probe carries what the ELA is supposed to see ----
+        chk("probe beat at idle",  {30'b0, pb_beat}, 32'h0);
+        chk("reserved bits zero",  {21'b0, pb_rsvd}, 32'h0);
+        chk("wvalid low at idle",  {31'b0, pb_wvalid}, 32'h0);
+
+        // rdata still holds the previous read, which was the unwatched
+        // one, so the miss marker is visible on the probe.
+        chk("probe rdata holds miss marker", pb_rdata, 32'hDEAD_BEEF);
+
+        // Read a known word and confirm the probe reports what we served.
+        host_read(A2, rd);
+        chk("read A2 after overwrite",  rd,       32'h8000_0001);
+        chk("probe rdata tracks a read", pb_rdata, 32'h8000_0001);
+        chk("probe addr tracks a read",  pb_addr,  A2);
+
 
         // ---- EIO clear re-zeroes every word ----
         watch_clear = 1'b1;
@@ -253,14 +265,6 @@ module tb_cpu_watch;
         // ---- and writes still land afterwards ----
         host_write(A1, 32'h1357_9BDF);
         chk_watch("write after clear", 32'h0, 32'h1357_9BDF, 32'h0, 32'h0);
-
-        // ---- the storage qualifier actually fired ----
-        if (qual_ticks == 0) begin
-            $display("FAIL qualifier never asserted");
-            errors = errors + 1;
-        end else begin
-            $display("PASS qualifier ticks: %0d", qual_ticks);
-        end
 
         if (contention != 0) begin
             $display("FAIL contention events: %0d", contention);

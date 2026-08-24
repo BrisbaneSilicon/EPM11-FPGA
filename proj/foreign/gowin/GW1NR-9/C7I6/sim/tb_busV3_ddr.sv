@@ -17,12 +17,10 @@ module tb_busV3_ddr;
     reg  [15:0] h_data  = 16'h0000;
     reg         h_drive = 1'b0;
 
-    wire [17:0] cpu;
-    assign cpu[17]   = h_io;
-    assign cpu[16]   = h_pclk;
-    assign cpu[15:0] = h_drive ? h_data : 16'hzzzz;
+    wire [15:0] cpu_data;
+    assign cpu_data = h_drive ? h_data : 16'hzzzz;
 
-    pulldown pd [17:0] (cpu);       // as per the .cst
+    pulldown pd [15:0] (cpu_data);      // as per the .cst
 
     wire [31:0] cpu_addr;
     wire [31:0] cpu_rdata;
@@ -31,14 +29,18 @@ module tb_busV3_ddr;
     reg  [31:0] cpu_wdata = 32'h0;
 
     busV3_ddr dut (
-        .cpu        (cpu),
-        .cpu_wdata  (cpu_wdata),
-        .cpu_addr   (cpu_addr),
-        .cpu_rdata  (cpu_rdata),
-        .cpu_valid  (cpu_valid),
-        .cpu_ren    (cpu_ren),
-        .clk        (clk),
-        .rst_n      (rst_n)
+        .clk            (clk),
+        .srst           (~rst_n),
+
+        .cpu_data_async (cpu_data),
+        .cpu_clk_async  (h_pclk),
+        .cpu_wr_async   (h_io),
+
+        .m_addr         (cpu_addr),
+        .m_wrdata       (cpu_rdata),
+        .m_wvalid       (cpu_valid),
+        .m_ren          (cpu_ren),
+        .m_rddata       (cpu_wdata)
     );
 
     // ---- fabric memory model, one clk of lookup latency ----
@@ -53,7 +55,7 @@ module tb_busV3_ddr;
     // ---- contention monitor ----
     integer contention = 0;
     always @(*) begin
-        if (h_drive === 1'b1 && dut.bus_drive === 1'b1) begin
+        if (h_drive === 1'b1 && dut.i_bus_drive === 1'b1) begin
             $display("CONTENTION at %0t: host and FPGA both driving", $time);
             contention = contention + 1;
         end
@@ -98,7 +100,7 @@ module tb_busV3_ddr;
             #(HALF/2);
             h_pclk = ~h_pclk;
             #10;
-            v = cpu[15:0];
+            v = cpu_data;
             #(HALF/2 - 10);
         end
     endtask
@@ -233,8 +235,8 @@ module tb_busV3_ddr;
 
         // ---- FPGA must be off the bus at idle ----
         #(GAP);
-        if (cpu[15:0] !== 16'h0000) begin
-            $display("FAIL idle: bus is %04h, expected pulldowns to win", cpu[15:0]);
+        if (cpu_data !== 16'h0000) begin
+            $display("FAIL idle: bus is %04h, expected pulldowns to win", cpu_data);
             errors = errors + 1;
         end else begin
             $display("PASS idle: FPGA released the bus");

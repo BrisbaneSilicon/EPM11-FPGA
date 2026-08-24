@@ -34,7 +34,7 @@ function Invoke-Sim {
     if ($LASTEXITCODE -ne 0) { throw "vvp failed for $Name" }
 }
 
-$busSources   = @("tb_bus.sv",   "$sv/bus.sv",   "$sv/bs_dff_sync.sv")
+$busSources   = @("tb_bus.sv",   "$sv/bus.sv",   "$sv/sync_edge.sv", "$sv/bs_dff_sync.sv")
 $busV2Sources = @("tb_busV2.sv", "$sv/busV2.sv", "$sv/sync_edge.sv", "$sv/bs_dff_sync.sv")
 $busV3Sources = @("tb_busV3_ddr.sv", "$sv/busV3_ddr.sv", "$sv/sync_edge.sv", "$sv/bs_dff_sync.sv")
 $watchSources = @("tb_cpu_watch.sv", "$sv/busV2.sv", "$sv/cpu_watch.sv", "$sv/sync_edge.sv", "$sv/bs_dff_sync.sv")

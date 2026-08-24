@@ -1,0 +1,270 @@
+===============================================================================
+EPM11 - ELA PROBE SIGNAL REFERENCE
+===============================================================================
+
+The signals captured by the fpgacapZero ELA on the EPM11 FPGA bus.
+
+Three files describe this layout and nothing links them mechanically. If you
+change one, change all three:
+
+    cpu_watch.sv        assign probe_bus = {...}    the hardware truth
+    prog/epm11_bus.prob                             what fcapz decodes
+    this file                                       what a human reads
+
+fcapz cannot discover the layout - the bitstream reports only sample_width,
+never field names. A .prob that is wrong but self-consistent decodes without
+any error and shows plausible, wrong values.
+
+Sample width is 128 bits: four aligned 32-bit words, which is how the host
+reads samples back, so a raw hex capture splits cleanly.
+
+Protocol reminder - a burst is always four 16-bit beats:
+
+    beat 0 : addr[15:0]        low half first, in both address and data
+    beat 1 : addr[31:16]
+    beat 2 : data[15:0]
+    beat 3 : data[31:16]
+
+On a write all four beats come from the RP2350. On a read the host drives
+beats 0 and 1, then releases the lanes and the FPGA drives beats 2 and 3.
+
+
+-------------------------------------------------------------------------------
+WORD 0 - the only word that can be triggered on
+-------------------------------------------------------------------------------
+
+pclk            [0]     1 bit
+
+    The program clock from the RP2350 (GPIO 22), after a two-flop
+    synchroniser into the FPGA's 51 MHz domain.
+
+    Rising edge  - the FPGA latches a beat and advances the beat counter.
+    Falling edge - the FPGA turns its own bus drivers on or off during a
+                   read.
+
+    Both phases must last long enough for the synchroniser to see them,
+    roughly 60 ns minimum. That is what fpga.set_pulse_delay() controls on
+    the host side.
+
+
+io              [1]     1 bit
+
+    Direction flag from the RP2350 (GPIO 21).
+
+        1 = write burst, all four beats come from the host
+        0 = read burst, the FPGA supplies beats 2 and 3
+
+    Sampled at beat 0. An io edge BETWEEN bursts is also treated as a free
+    resync of the beat counter, so framing recovers on its own.
+
+
+beat            [3:2]   2 bits
+
+    Position within the four-beat burst.
+
+        0 = address low half
+        1 = address high half
+        2 = data low half
+        3 = data high half
+
+    Advances on each pclk rising edge and wraps 3 -> 0. The single most
+    useful signal for spotting a desynced burst, and what tells you which
+    beat a given data_bus value belongs to.
+
+
+wvalid          [4]     1 bit
+
+    A write burst COMPLETED. Address and data are both valid on this cycle
+    and the value has been committed. One sample clock wide.
+
+    This is the "the write actually happened" marker, and the natural
+    trigger for capturing a write:
+
+        --trigger-value 16 --trigger-mask 0x10
+
+    Decimal for the value - the fcapz CLI parses --trigger-value with a
+    bare int and rejects 0x, unlike every other flag beside it.
+
+    Being one cycle wide, it only lands in a sparse capture if the
+    qualifier happens to store that exact cycle. Qualifying on pclk does,
+    because wvalid is raised on the same edge that wraps beat 3 to 0.
+
+
+reserved        [15:5]  11 bits
+
+    Always zero. Not decoration: it is what keeps addr, wdata and rdata on
+    32-bit boundaries, so a raw hex sample splits into four clean words.
+
+
+data_bus        [31:16] 16 bits
+
+    The RAW 16-bit bus level, synchronised, sampled continuously regardless
+    of pclk.
+
+    This is what is physically on the wires, independent of any protocol
+    activity - which makes it the continuity meter. Drive a known pattern
+    from the host and read this back: any lane stuck at 0 is an open
+    circuit between the boards. That is how the data lanes were proven
+    during bring-up.
+
+    On a read, beats 2 and 3 show what the FPGA drove back.
+
+
+-------------------------------------------------------------------------------
+WORDS 1 TO 3 - visible in a capture, but not triggerable
+-------------------------------------------------------------------------------
+
+addr            [63:32] 32 bits
+
+    The address as assembled so far. Low half lands after beat 0, high half
+    after beat 1. Watching it fill across those two beats is the direct way
+    to confirm both address beats are arriving.
+
+
+wdata           [95:64] 32 bits
+
+    The value being written. Low half after beat 2, high half after beat 3.
+    Only meaningful on a write.
+
+
+rdata           [127:96] 32 bits
+
+    The value the FPGA is handing back on a read. Holds its previous value
+    between reads, so on a write burst it still shows the last read result.
+
+    Reads 0xDEADBEEF after a read of an address the fabric does not decode,
+    which is cpu_watch.sv's miss marker.
+
+
+-------------------------------------------------------------------------------
+READING A BURST
+-------------------------------------------------------------------------------
+
+A write of 0xA5A50091 to 0x000000FC, one line per beat:
+
+  io=1  beat=0  addr=0x........FC                  data_bus=0x00FC
+  io=1  beat=1  addr=0x000000FC                    data_bus=0x0000
+  io=1  beat=2  addr=0x000000FC  wdata=0x....A5A5  data_bus=0xA5A5
+  io=1  beat=3  addr=0x000000FC  wdata=0xA5A50091  data_bus=0xA5A5
+
+A read is the same for beats 0 and 1, then io stays low and data_bus
+carries the FPGA's answer on beats 2 and 3 rather than anything the host
+drove. rdata shows the value being served.
+
+The three to watch first:
+
+    beat        is the burst framing intact
+    data_bus    what is really on the wires
+    addr        does it assemble correctly across beats 0 and 1
+
+
+-------------------------------------------------------------------------------
+WHY THE FIELD ORDER IS WHAT IT IS
+-------------------------------------------------------------------------------
+
+Everything worth triggering or qualifying on lives in WORD 0, below bit 32.
+
+fcapz_ela.v zero-extends its trigger and storage-qualification value and
+mask registers from 32 bits when SAMPLE_W is larger than 32 (see its
+g_sq_wide branch). Only the low 32 bits of a sample can ever be matched
+against. So pclk, io, beat, wvalid and data_bus sit there, and the wide address
+and data fields sit above.
+
+Moving a field across that boundary silently disables triggering on it - no
+error, it just never fires.
+
+A consequence worth knowing: addr is above bit 32, so you CANNOT trigger on
+an address. Trigger on io rising (start of a write burst), on pclk, or on a
+specific 16-bit value in data_bus.
+
+
+-------------------------------------------------------------------------------
+CAPTURING
+-------------------------------------------------------------------------------
+
+Storage qualification is what makes a capture usable. A free-running 51 MHz
+capture 64 deep spans only 1.25 us, and a host bit-banging pclk takes
+milliseconds per burst, so an unqualified capture will never contain one.
+
+Qualify on CHANGED (mode 8) on pclk, which stores one sample per pclk edge,
+eight per burst:
+
+    fcapz --backend openocd --port 6666 --tap GW1NR-9C.tap capture \
+      --probe-file prog/epm11_bus.prob \
+      --depth 64 --pretrigger 0 --posttrigger 63 \
+      --trigger-value 0 --trigger-mask 0 \
+      --stor-qual-mode 8 --stor-qual-mask 0x01 \
+      --timeout 60 --format vcd --out traffic.vcd --summarize
+
+A trigger mask of 0 matches everything, so it fires the moment it is armed
+and simply records forward.
+
+To catch one specific write instead, trigger on wvalid and keep mostly
+pre-trigger samples, since wvalid fires at the END of a burst:
+
+    --pretrigger 40 --posttrigger 23 --trigger-value 16 --trigger-mask 0x10
+
+pretrigger + posttrigger + 1 must not exceed depth.
+
+Compare modes, from trig_compare.v:
+
+    0 = EQ        6 = RISING
+    1 = NEQ       7 = FALLING
+    2..5 = relational, not built in this bitstream
+    8 = CHANGED
+
+Mode 0 cannot be used for storage qualification, because a mode of zero
+means "disabled". The fcapz CLI help describing mode 1 as "store when
+match" is wrong - mode 1 is NEQ, so to store when a bit is SET you compare
+NEQ against a value of 0 with that bit in the mask.
+
+Also note --trigger-value is the one flag that will not accept 0x hex; its
+argparse type is bare int. Pass it in decimal. --trigger-mask,
+--stor-qual-value and --stor-qual-mask all take hex.
+
+
+-------------------------------------------------------------------------------
+A TRAP WHEN READING SPARSE CAPTURES
+-------------------------------------------------------------------------------
+
+Storage qualification changes what a waveform means.
+
+Qualify on beat CHANGED (--stor-qual-mask 0x0C) and every stored sample is
+taken at a pclk RISING edge, because that is the only time beat moves. pclk
+then reads high in every sample and looks stuck. It is not - you are only
+ever looking at it while it is high. Qualifying on pclk (mask 0x01)
+instead stores both edges and shows it toggling.
+
+With any storage qualification the horizontal axis of a VCD is NOT real
+time. The viewer draws stored samples as consecutive sample-clock ticks,
+but the real gaps between beats are microseconds and between bursts can be
+milliseconds. Read a sparse capture as an ordered sequence of events, not a
+timing diagram. Relative order is exact, durations are meaningless.
+
+
+-------------------------------------------------------------------------------
+RE-ENABLING user_probe
+-------------------------------------------------------------------------------
+
+user.sv has its own 16-bit probe output, for a customer's own signals. It is
+built but not captured, to keep the sample at a round 128 bits.
+
+To turn it on, set this in BOTH wrapper generators - build/
+generate_top_wrapper.ps1 and build/platforms/gowin/devices/GW1NR-9/
+generate_top_wrapper.sh:
+
+    localparam ELA_USER_PROBE = 1;
+
+That is the only RTL edit. Sample width and the concatenation both follow
+from it.
+
+Then in prog/epm11_bus.prob, change sample_width to 144 and add:
+
+    { "name": "user_probe", "width": 16, "lsb": 128 }
+
+Cost: no extra BSRAM, since 128 and 144 bits both need 8 blocks. Readback
+goes from 4 words per sample to 5, so captures come back about 25 percent
+slower.
+
+
+===============================================================================
