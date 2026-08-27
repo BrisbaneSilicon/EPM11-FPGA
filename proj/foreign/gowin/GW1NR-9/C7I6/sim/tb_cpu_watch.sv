@@ -1,12 +1,28 @@
+// -------------------------------------------------------------------------
+// DESCRIPTION :
+//
+// Testbench for busV2 and cpu_watch together, wired exactly as top.sv
+// wires them.
+//
+// -------------------------------------------------------------------------
+// SPECIFICATION :
+//
+// Proves the watched words start at zero, take a host write only at their
+// own full 32-bit address, read back, and land in the probe bundles where
+// the ELA expects to find them.
+//
+// The address decode is checked from both directions: a write with the
+// right low half but the wrong upper half must miss, and vice versa. That
+// is what proves BOTH address beats are being captured.
+//
+// Run with  ./run.sh watch
+//
+// -------------------------------------------------------------------------
+
 `timescale 1ns/1ps
-//
-// busV2 + cpu_watch, wired exactly as top.sv wires them.
-//
-// Proves the four watched words start at zero, take a host write only at
-// their own full 32-bit address, read back, and land in the probe bundles
-// where the ELA expects to find them.
-//
 module tb_cpu_watch;
+
+    parameter int pSYNC_STAGES = 2;
 
     parameter PCLK_LO = 250;
     parameter PCLK_HI = 250;
@@ -47,7 +63,9 @@ module tb_cpu_watch;
     reg          watch_clear = 1'b0;
     wire [127:0] probe_watch;
 
-    busV2 busV2_inst (
+    busV2 #(
+        .pSYNC_STAGES   (pSYNC_STAGES)
+    ) busV2_inst (
         .clk            (clk),
         .srst           (~rst_n),
 
@@ -70,7 +88,8 @@ module tb_cpu_watch;
     cpu_watch #(
         .pWATCH_COUNT       (4),
         .pPROBE_BUS_W       (128),
-        .pPROBE_WATCH_W     (128)
+        .pPROBE_WATCH_W     (128),
+        .pSYNC_STAGES       (pSYNC_STAGES)
     ) cpu_watch_inst (
         .clk                (clk),
         .srst               (~rst_n),

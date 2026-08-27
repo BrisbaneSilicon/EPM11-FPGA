@@ -25,8 +25,7 @@ proc gowin_systemverilog {} {
 
         top.sv
 
-        bs_dff_sync.sv
-        sync_edge.sv
+        dff_synchroniser.sv
         busV2.sv
         cpu_watch.sv
 

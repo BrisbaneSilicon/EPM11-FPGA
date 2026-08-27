@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------
+// DESCRIPTION :
+//
+// Testbench for busV3_ddr, the double data rate host bus slave.
+//
+// -------------------------------------------------------------------------
+// SPECIFICATION :
+//
+// As tb_busV2, but a beat lands on every cpu_clk edge rather than every
+// rising edge, and a read costs a whole cpu_clk cycle of turnaround.
+//
+// Run with  ./run.sh busV3
+//
+// -------------------------------------------------------------------------
+
 `timescale 1ns/1ps
 
 module tb_busV3_ddr;

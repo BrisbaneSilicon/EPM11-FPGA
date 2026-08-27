@@ -35,14 +35,15 @@ function Invoke-Sim {
 }
 
 $busSources   = @("tb_bus.sv",   "$sv/bus.sv",   "$sv/sync_edge.sv", "$sv/bs_dff_sync.sv")
-$busV2Sources = @("tb_busV2.sv", "$sv/busV2.sv", "$sv/sync_edge.sv", "$sv/bs_dff_sync.sv")
-$busV3Sources = @("tb_busV3_ddr.sv", "$sv/busV3_ddr.sv", "$sv/sync_edge.sv", "$sv/bs_dff_sync.sv")
-$watchSources = @("tb_cpu_watch.sv", "$sv/busV2.sv", "$sv/cpu_watch.sv", "$sv/sync_edge.sv", "$sv/bs_dff_sync.sv")
+$syncSources  = @("tb_dff_synchroniser.sv", "$sv/dff_synchroniser.sv")
+$busV2Sources = @("tb_busV2.sv", "$sv/busV2.sv", "$sv/dff_synchroniser.sv")
+$busV3Sources = @("tb_busV3_ddr.sv", "$sv/busV3_ddr.sv", "$sv/dff_synchroniser.sv")
+$watchSources = @("tb_cpu_watch.sv", "$sv/busV2.sv", "$sv/cpu_watch.sv", "$sv/dff_synchroniser.sv")
 
 switch ($Target) {
-    "bus"   { Invoke-Sim "tb_bus"   $busSources }
+    "sync"  { Invoke-Sim "tb_dff_synchroniser" $syncSources }
     "busV2" { Invoke-Sim "tb_busV2" $busV2Sources }
     "watch" { Invoke-Sim "tb_cpu_watch" $watchSources }
-    "all"   { Invoke-Sim "tb_bus" $busSources; Write-Host ""; Invoke-Sim "tb_busV2" $busV2Sources; Write-Host ""; Invoke-Sim "tb_cpu_watch" $watchSources }
-    default { Write-Error "usage: .\run.ps1 [bus|busV2|watch]" }
+    "all"   { Invoke-Sim "tb_dff_synchroniser" $syncSources; Write-Host ""; Invoke-Sim "tb_busV2" $busV2Sources; Write-Host ""; Invoke-Sim "tb_cpu_watch" $watchSources }
+    default { Write-Error "usage: .\run.ps1 [sync|busV2|busV3|watch]" }
 }

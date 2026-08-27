@@ -1,6 +1,25 @@
+// -------------------------------------------------------------------------
+// DESCRIPTION :
+//
+// Testbench for busV2, the read and write host bus slave.
+//
+// -------------------------------------------------------------------------
+// SPECIFICATION :
+//
+// Drives a model host against the real RTL. Covers the write path, the
+// read turnaround, a host that stalls mid-burst, and back-to-back bursts
+// with no gap at all. Also watches for bus contention, which is the
+// failure a read turnaround is most likely to produce.
+//
+// Run with  ./run.sh busV2
+//
+// -------------------------------------------------------------------------
+
 `timescale 1ns/1ps
 
 module tb_busV2;
+
+    parameter int pSYNC_STAGES = 2;
 
     parameter PCLK_LO      = 250;
     parameter PCLK_HI      = 250;
@@ -29,7 +48,9 @@ module tb_busV2;
     wire        cpu_ren;
     reg  [31:0] cpu_wdata = 32'h0;
 
-    busV2 dut (
+    busV2 #(
+        .pSYNC_STAGES   (pSYNC_STAGES)
+    ) dut (
         .clk            (clk),
         .srst           (~rst_n),
 
@@ -85,6 +106,21 @@ module tb_busV2;
         begin
             h_data = value; h_drive = 1'b1;
             #(PCLK_LO); h_pclk = 1'b1; #(PCLK_HI); h_pclk = 1'b0;
+        end
+    endtask
+
+    // Drive a beat, then move the data one fabric clock after the rising
+    // edge. Legal - the protocol only requires the data valid AT the edge -
+    // and it is what catches a data delay that does not match the
+    // synchroniser depth. With the two mismatched, the FPGA samples after
+    // the edge and latches the wrong half.
+    task host_beat_early_change(input [15:0] value, input [15:0] garbage);
+        begin
+            h_data = value; h_drive = 1'b1;
+            #(PCLK_LO); h_pclk = 1'b1;
+            #20;        h_data = garbage;
+            #(PCLK_HI); h_pclk = 1'b0;
+            h_data = value;
         end
     endtask
 
@@ -225,6 +261,18 @@ module tb_busV2;
         end else begin
             $display("PASS idle: FPGA released the bus");
         end
+
+        // ---- the data delay must track the synchroniser depth ----
+        h_drive = 1'b1; h_data = 16'h0000;
+        #100; h_io = 1'b1; #100;
+        host_beat_early_change(16'h1357, 16'hFFFF);
+        host_beat_early_change(16'h2468, 16'hFFFF);
+        host_beat_early_change(16'hACE0, 16'hFFFF);
+        host_beat_early_change(16'hBDF1, 16'hFFFF);
+        #200; h_io = 1'b0; h_drive = 1'b0;
+        #(GAP);
+        chk("early data change, addr", seen_addr, 32'h2468_1357);
+        chk("early data change, data", seen_data, 32'hBDF1_ACE0);
 
         chk_int("contention events", contention, 0);
 

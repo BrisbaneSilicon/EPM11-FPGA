@@ -40,12 +40,10 @@ module top #(
 
     output  reg                 led,
 
-    inout   wire    [15:0]      cpu_data_async,
-    input                       cpu_clk_async,
-    input                       cpu_wr_async,
-        // NOTE: only the data lines are shared.
-        // The clock and direction are driven by
-        // the host alone. See busV2.sv.
+    inout   wire    [15:0]      cpu_data, // NOTE: these are asynchronous
+    input                       cpu_clk,
+    input                       cpu_wr,
+
 
     output  [CS_WIDTH-1:0]      psram_ck,
     output  [CS_WIDTH-1:0]      psram_ck_n,
@@ -153,20 +151,20 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
     // ----------------------------------------------
 
 
-    // NOTE: CPU
-    // Interface
-    // ------------------
-
-    // The RPI is the master on the cpu pads. The bus uses a 32 bit address and a 32 bit value.
-    
+    // -------------------------------------------------
+    // RPI-FPGA BUS:
+    //
+    // The RPI is the master, the FPGA is the slave.
+    //
+    // -------------------------------------------------
 
     busV2 busV2_inst (
         .clk                    (i_sysclk),
         .srst                   (~i_soft_reset_n),
 
-        .cpu_data_async         (cpu_data_async),
-        .cpu_clk_async          (cpu_clk_async),
-        .cpu_wr_async           (cpu_wr_async),
+        .cpu_data_async         (cpu_data),
+        .cpu_clk_async          (cpu_clk),
+        .cpu_wr_async           (cpu_wr),
 
         .m_addr                 (i_bus_addr),
         .m_wrdata               (i_bus_wrdata),
@@ -180,15 +178,21 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
         .dbg_drive              ()
     );
 
+
+    // Note: the following link to the user.sv module.
+    // Currently for data to be transfered, the user would need 
+    // to store info in the 
     assign cpu_ready    = 1'b1;
     assign cpu_rdata    = 0;
-        // NOTE: the user-facing cpu_* ports
-        // are a separate bus, still unused.
 
 
-    // NOTE: Watched
-    // memory locations
-    // ------------------
+
+    // --------------------------
+    // Watch memory locations:
+    //
+    // Written with AI, the following section is implemented for
+    // using the ELA and debugging errors.
+    // -------------------------
 
     cpu_watch #(
         .pWATCH_COUNT           (WATCH_COUNT),
@@ -207,8 +211,8 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
         .dbg_data               (i_bus_dbg_data),
         .dbg_beat               (i_bus_dbg_beat),
 
-        .cpu_clk_async          (cpu_clk_async),
-        .cpu_wr_async           (cpu_wr_async),
+        .cpu_clk_async          (cpu_clk),
+        .cpu_wr_async           (cpu_wr),
         .watch_clear_async      (watch_clear_async),
 
         .probe_bus              (probe_bus),

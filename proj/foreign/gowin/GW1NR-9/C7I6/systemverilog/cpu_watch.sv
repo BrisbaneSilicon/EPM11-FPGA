@@ -1,8 +1,9 @@
-// DESCRIPTION :
+// -------------------------------------------------------------------------
+// DESCRIPTION : ALL DONE BY AI
 //
-// Four probe-visible memory words sitting behind the host bus, plus the
-// probe bundles the fpgacapZero cores sample. Split out of top.sv so it
-// can be simulated against the real busV2 rather than against a copy.
+// Probe-visible memory words sitting behind the host bus, plus the probe
+// bundles the fpgacapZero cores sample. Split out of top.sv so it can be
+// simulated against the real busV2 rather than against a copy.
 //
 // -------------------------------------------------------------------------
 // SPECIFICATION :
@@ -14,230 +15,265 @@
 // probe_bus goes to the ELA. It is four aligned 32-bit words, which is how
 // the host reads samples back, so a raw hex capture splits cleanly:
 //
-//   word 0   [0]         pclk        Pclk, synchronised
-//            [1]         io          IO,   synchronised
-//            [3:2]       beat        burst position 0..3
-//            [4]         wvalid      write burst complete, one clk wide
-//            [15:5]      reserved    keeps the words below aligned
-//            [31:16]     data_bus    the 16 wires, as busV2 sampled them
-//   word 1   [63:32]     addr        address being accessed
-//   word 2   [95:64]     wdata       value the host is writing
-//   word 3   [127:96]    rdata       value we are handing back on a read
+//      word 0  [0]         pclk        cpu_clk, synchronised
+//              [1]         io          cpu_wr,  synchronised
+//              [3:2]       beat        burst position 0..3
+//              [4]         wvalid      write complete, one clk wide
+//              [15:5]      reserved    keeps the words below aligned
+//              [31:16]     data_bus    the 16 wires, as busV2 sampled them
+//      word 1  [63:32]     addr        address being accessed
+//      word 2  [95:64]     wdata       value the host is writing
+//      word 3  [127:96]    rdata       value we are handing back on a read
 //
 // The ordering is not cosmetic. fcapz_ela.v zero-extends the trigger and
 // storage-qualification value and mask from 32-bit registers when
-// SAMPLE_W > 32 (see its g_sq_wide branch), so ONLY word 0 can be matched
-// on. Everything worth triggering or qualifying on - pclk, io, beat,
-// wvalid and the raw bus - therefore lives there, and the wide fields sit
-// above it.
+// SAMPLE_W > 32, so ONLY word 0 can be matched on. Everything worth
+// triggering or qualifying on lives there, and the wide fields sit above.
 //
-// wvalid is the natural trigger for catching a write:
+//      trigger on a completed write    --trigger-value 16 --trigger-mask 0x10
+//      qualify on every cpu_clk edge   --stor-qual-mode 8 --stor-qual-mask 0x01
 //
-//      --trigger-value 16 --trigger-mask 0x10
+// The trigger value is decimal because the fcapz CLI parses it with a bare
+// int and rejects 0x, unlike every other flag beside it.
 //
-// (decimal for the value: the fcapz CLI parses --trigger-value with a bare
-// int and rejects 0x, unlike every other flag beside it.)
-//
-// In particular, capture is qualified with CHANGED on pclk:
-//
-//      --stor-qual-mode 8 --stor-qual-mask 0x01
-//
-// which stores one sample per pclk edge. A free-running 51 MHz capture 64
-// deep spans only 1.25 us, which a host bit-banging pclk will never fit a
-// burst into.
-//
-// probe_watch goes to the EIO rather than the ELA. The four words are slow
+// probe_watch goes to the EIO rather than the ELA. The words are slow
 // state, not waveform - storing them 64 deep would burn BSRAM holding the
 // same value 64 times. EIO reads them on demand for free.
 //
 // -------------------------------------------------------------------------
 
+
+
+// Human note: This is an AI written module that works to probe the RPI-FPGA bus.
+
+
+
 `timescale 1ns/1ps
 
-module cpu_watch #(
-    parameter int WATCH_COUNT   = 4,
-    parameter int PROBE_BUS_W   = 128,
-    parameter int PROBE_WATCH_W = 128
-) (
-    input                               clk,
-    input                               rst_n,
+module cpu_watch
+#(
+    parameter int pWATCH_COUNT      = 4,
+    parameter int pPROBE_BUS_W      = 128,
+    parameter int pPROBE_WATCH_W    = 128,
+    parameter int pSYNC_STAGES      = 2
+)
+(
+    // -------------- clocking --------------
+
+    input   logic                           clk,
+    input   logic                           srst,
+
+
+    // -------------- fabric slave --------------
+    // NOTE: named from OUR point of view, so
+    // s_wrdata is what the master writes into
+    // us and s_rddata is what we hand back...
+
+    input   logic   [31:0]                  s_addr,
+    input   logic   [31:0]                  s_wrdata,
+    input   logic                           s_wvalid,
+    input   logic                           s_ren,
+    output  logic   [31:0]                  s_rddata,
+
+
+    // -------------- bus debug --------------
+
+    input   logic   [15:0]                  dbg_data,
+    input   logic   [1:0]                   dbg_beat,
+        // NOTE: observation taps from busV2,
+        // for the probe only - nothing here
+        // drives logic...
 
 
     // -------------- host bus --------------
-    // NOTE: named from the fabric side, so
-    // wdata is what the host writes to us.
 
-    input       [31:0]                  bus_addr,
-    input       [31:0]                  bus_wdata,
-    input                               bus_wvalid,
-    input                               bus_ren,
-    output  reg [31:0]                  bus_rdata,
+    input   logic                           cpu_clk_async,
+    input   logic                           cpu_wr_async,
+        // NOTE: taken straight off the pads so
+        // the probe shows the lines themselves,
+        // not our interpretation of them...
 
-    input       [19:0]                  bus_dbg,
-        // NOTE: busV2 internals, see its dbg
-        // port. Only the beat counter and the
-        // sampled bus are used here; the rest
-        // of the bundle is left for whoever
-        // needs it next.
-
-
-    // -------------- raw pads --------------
-
-    input                               pclk_async,
-    input                               io_async,
-
-
-    // -------------- host control --------------
-
-    input                               watch_clear,
+    input   logic                           watch_clear_async,
         // NOTE: from the EIO, lets the host
         // re-zero the words over JTAG without
-        // a power cycle.
+        // a power cycle...
 
 
     // -------------- probes --------------
 
-    output      [PROBE_BUS_W-1:0]       probe_bus,
-    output      [PROBE_WATCH_W-1:0]     probe_watch
+    output  logic   [pPROBE_BUS_W-1:0]      probe_bus,
+    output  logic   [pPROBE_WATCH_W-1:0]    probe_watch
 );
 
-    // Picked so every meaningful address bit is seen both low and high,
-    // and so the upper halves are not all the same value:
+    // NOTE: picked so every meaningful address
+    // bit is seen both low and high, and so the
+    // upper halves are not all the same value:
     //      [0] 0000_0000   all bits low
     //      [1] 0000_00FC   low half only, upper half zero
     //      [2] 5A5A_A5A4   alternating, both halves non-zero
     //      [3] FFFF_FFFC   all bits high
-    // Bits [1:0] stay low, the words are 4-byte aligned.
-    //
-    // NOTE: flat, not a packed array of
-    // parameters - iverilog rejects those.
+    // Bits [1:0] stay low, the words are 4-byte
+    // aligned. Flat rather than a packed array
+    // of parameters - iverilog rejects those...
 
-    localparam [(32*WATCH_COUNT)-1:0] WATCH_ADDR = {
+    localparam [(32*pWATCH_COUNT)-1:0] cWATCH_ADDR = {
         32'hFFFF_FFFC,      // [3]
         32'h5A5A_A5A4,      // [2]
         32'h0000_00FC,      // [1]
         32'h0000_0000       // [0]
     };
 
+    localparam [31:0] cMISS_MARKER = 32'hDEAD_BEEF;
+
 
     // ----------------------------------------------
     //  Internal signals
     // ----------------------------------------------
 
-    reg     [WATCH_COUNT-1:0] [31:0]    i_watch_data;
-    wire    [WATCH_COUNT-1:0]           i_watch_hit;
+    logic   [pWATCH_COUNT-1:0] [31:0]   i_watch_data;
+    logic   [pWATCH_COUNT-1:0]          i_watch_hit;
 
-    wire                                i_pclk_sync;
-    wire                                i_io_sync;
+    logic                               i_cpu_clk_sync;
+    logic                               i_cpu_wr_sync;
+    logic                               i_watch_clear;
 
-    reg                                 i_clear_p1;
-    reg                                 i_clear_p0;
-
-    wire    [15:0]                      i_dbg_data_bus;
-    wire    [1:0]                       i_dbg_beat;
+    integer                             i_wi;
+    integer                             i_ri;
 
 
     // ----------------------------------------------
     //  Implementation
     // ----------------------------------------------
 
-    assign i_dbg_data_bus = bus_dbg[15:0];
-    assign i_dbg_beat     = bus_dbg[17:16];
+
+    // NOTE: Address
+    // decode
+    // ------------
 
     genvar w;
     generate
-        for (w = 0; w < WATCH_COUNT; w = w + 1) begin : gen_watch_hit
-            assign i_watch_hit[w] = (bus_addr == WATCH_ADDR[32*w +: 32]);
+        for (w = 0; w < pWATCH_COUNT; w = w + 1) begin : gen_watch_hit
+            assign i_watch_hit[w] = (s_addr == cWATCH_ADDR[32*w +: 32]);
         end
     endgenerate
 
-    // The EIO drives watch_clear from the JTAG register domain. On this
-    // part that domain is i_sysclk already, but resynchronise anyway so
-    // the module stays correct if the ELA is ever given its own clock.
+
+    // NOTE: Watched
+    // memory words
+    // ------------
+
+    // NOTE: the EIO drives watch_clear from the
+    // JTAG register domain. On this part that is
+    // the system clock already, but synchronise
+    // anyway so the module stays correct if the
+    // ELA is ever given its own clock...
+
+    dff_synchroniser #(
+        .pSYNC_STAGES   (pSYNC_STAGES)
+    ) dff_synchroniser_clear_inst (
+        .clk            (clk),
+        .srst           (srst),
+        .sync           (i_watch_clear),
+
+        .async          (watch_clear_async)
+    );
 
     always @(posedge clk) begin
-        if (rst_n == 1'b0) begin
-            i_clear_p1 <= 1'b0;
-            i_clear_p0 <= 1'b0;
-        end else begin
-            i_clear_p1 <= watch_clear;
-            i_clear_p0 <= i_clear_p1;
-        end
-    end
 
-    integer wi;
-    always @(posedge clk) begin
-        if (rst_n == 1'b0) begin
-            for (wi = 0; wi < WATCH_COUNT; wi = wi + 1) begin
-                i_watch_data[wi] <= 32'h0000_0000;
+        if (i_watch_clear == 1'b1) begin
+            for (i_wi = 0; i_wi < pWATCH_COUNT; i_wi = i_wi + 1) begin
+                i_watch_data[i_wi] <= 32'h0000_0000;
             end
-        end else if (i_clear_p0 == 1'b1) begin
-            for (wi = 0; wi < WATCH_COUNT; wi = wi + 1) begin
-                i_watch_data[wi] <= 32'h0000_0000;
-            end
-        end else if (bus_wvalid == 1'b1) begin
-            for (wi = 0; wi < WATCH_COUNT; wi = wi + 1) begin
-                if (i_watch_hit[wi] == 1'b1) begin
-                    i_watch_data[wi] <= bus_wdata;
+        end else if (s_wvalid == 1'b1) begin
+            for (i_wi = 0; i_wi < pWATCH_COUNT; i_wi = i_wi + 1) begin
+                if (i_watch_hit[i_wi] == 1'b1) begin
+                    i_watch_data[i_wi] <= s_wrdata;
                 end
             end
         end
+
+        // NOTE: handle reset here in order to
+        // reduce control sets...
+        if (srst == 1'b1) begin
+            for (i_wi = 0; i_wi < pWATCH_COUNT; i_wi = i_wi + 1) begin
+                i_watch_data[i_wi] <= 32'h0000_0000;
+            end
+        end
     end
 
-    // NOTE: read back, so the host can verify what it stored. busV2
-    // raises cpu_ren at beat 1 and does not sample us until the beat 2
-    // falling edge, so one clk of lookup latency is plenty.
 
-    integer ri;
+    // NOTE: Read
+    // back
+    // ------------
+
+    // NOTE: so the host can verify what it
+    // stored. busV2 raises m_ren at beat 1 and
+    // does not sample us until the beat 2
+    // falling edge, so one clk of lookup
+    // latency is plenty...
+
     always @(posedge clk) begin
-        if (rst_n == 1'b0) begin
-            bus_rdata <= 32'h0000_0000;
-        end else if (bus_ren == 1'b1) begin
-            bus_rdata <= 32'hDEAD_BEEF;
+
+        if (s_ren == 1'b1) begin
+            s_rddata <= cMISS_MARKER;
                 // NOTE: reads of an unwatched
-                // address are then obvious.
+                // address are then obvious...
 
-            for (ri = 0; ri < WATCH_COUNT; ri = ri + 1) begin
-                if (i_watch_hit[ri] == 1'b1) begin
-                    bus_rdata <= i_watch_data[ri];
+            for (i_ri = 0; i_ri < pWATCH_COUNT; i_ri = i_ri + 1) begin
+                if (i_watch_hit[i_ri] == 1'b1) begin
+                    s_rddata <= i_watch_data[i_ri];
                 end
             end
+        end
+
+        // NOTE: handle reset here in order to
+        // reduce control sets...
+        if (srst == 1'b1) begin
+            s_rddata <= 32'h0000_0000;
         end
     end
 
 
-    // NOTE: probe
+    // NOTE: Probe
     // assembly
     // ------------
 
-    // pclk and io are asynchronous, so they get their own synchronisers
-    // before the ELA samples them. Same 2-FF depth busV2 uses internally,
-    // so what the probe shows is what busV2 actually acted on.
+    // NOTE: cpu_clk and cpu_wr are asynchronous,
+    // so they get their own synchronisers before
+    // the ELA samples them. Same depth busV2
+    // uses, so what the probe shows is what
+    // busV2 actually acted on...
 
-    bs_dff_sync probe_pclk_sync_inst (
-        .clk        (clk),
-        .rst_n      (rst_n),
-        .async_in   (pclk_async),
-        .sync_out   (i_pclk_sync)
+    dff_synchroniser #(
+        .pSYNC_STAGES   (pSYNC_STAGES)
+    ) dff_synchroniser_cpu_clk_inst (
+        .clk            (clk),
+        .srst           (srst),
+        .sync           (i_cpu_clk_sync),
+
+        .async          (cpu_clk_async)
     );
 
-    bs_dff_sync probe_io_sync_inst (
-        .clk        (clk),
-        .rst_n      (rst_n),
-        .async_in   (io_async),
-        .sync_out   (i_io_sync)
+    dff_synchroniser #(
+        .pSYNC_STAGES   (pSYNC_STAGES)
+    ) dff_synchroniser_cpu_wr_inst (
+        .clk            (clk),
+        .srst           (srst),
+        .sync           (i_cpu_wr_sync),
+
+        .async          (cpu_wr_async)
     );
 
     assign probe_bus = {
-        bus_rdata,          // [127:96] word 3, value handed back on a read
-        bus_wdata,          // [95:64]  word 2, value being written
-        bus_addr,           // [63:32]  word 1, address being accessed
-        i_dbg_data_bus,     // [31:16]  word 0, the 16 wires as sampled
+        s_rddata,           // [127:96] word 3, handed back on a read
+        s_wrdata,           // [95:64]  word 2, value being written
+        s_addr,             // [63:32]  word 1, address being accessed
+        dbg_data,           // [31:16]  word 0, the 16 wires as sampled
         11'h000,            // [15:5]   reserved, keeps the words aligned
-        bus_wvalid,         // [4]      write burst complete
-        i_dbg_beat,         // [3:2]    burst position
-        i_io_sync,          // [1]      IO
-        i_pclk_sync         // [0]      Pclk
+        s_wvalid,           // [4]      write burst complete
+        dbg_beat,           // [3:2]    burst position
+        i_cpu_wr_sync,      // [1]      cpu_wr
+        i_cpu_clk_sync      // [0]      cpu_clk
     };
 
     assign probe_watch = {

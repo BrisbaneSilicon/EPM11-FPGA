@@ -283,23 +283,34 @@ localparam CS_WIDTH         = 2;
             //  Internal signals (ELA-internal)
             // ----------------------------------------------
 
-            // SAMPLE_W is the width captured per sample. NUM_CHANNELS is
-            // a build-time MUX, not extra width - it gives N separate
-            // SAMPLE_W buses and you capture one of them, chosen at arm
-            // time. So the whole bus goes in SAMPLE_W, channels stay 1.
+            // NOTE: SAMPLE_W is the width captured
+            // per sample. NUM_CHANNELS is a
+            // build-time MUX, not extra width - it
+            // gives N separate SAMPLE_W buses and
+            // you capture one of them, chosen at
+            // arm time. So the whole bus goes in
+            // SAMPLE_W, channels stay 1...
 
-            // ---- user.sv's own probe: off by default -----------------
+            // NOTE: user.sv's
+            // own probe
+            // ------------
             //
-            // Set ELA_USER_PROBE to 1 to capture user.sv's 16-bit probe
-            // alongside the bus. That is the ONLY edit needed here - the
-            // sample width and the concatenation both follow from it.
+            // Set ELA_USER_PROBE to 1 to capture
+            // user.sv's 16-bit probe alongside the
+            // bus. That is the ONLY edit needed
+            // here - the sample width and the
+            // concatenation both follow from it.
             //
-            // Then add a user_probe entry to prog/epm11_bus.prob so
-            // the host knows how to decode it - name user_probe, width
-            // 16, lsb 128 - and change sample_width there to 144.
+            // Then add a user_probe entry to
+            // prog/epm11_bus.prob so the host knows
+            // how to decode it - name user_probe,
+            // width 16, lsb 128 - and change
+            // sample_width there to 144.
             //
-            // Cost: no extra BSRAM (128 and 144 bits both need 8 blocks),
-            // but readback goes from 4 words per sample to 5.
+            // Costs no extra BSRAM, since 128 and
+            // 144 bits both need 8 blocks, but
+            // readback goes from 4 words per sample
+            // to 5...
 
             localparam ELA_USER_PROBE   = 0;
 
@@ -319,8 +330,10 @@ localparam CS_WIDTH         = 2;
                 end
             end
 
-            // Built at full width, then sliced. With ELA_USER_PROBE at 0
-            // the slice drops the user probe and synthesis prunes it.
+            // NOTE: built at full width, then
+            // sliced. With ELA_USER_PROBE at 0 the
+            // slice drops the user probe and
+            // synthesis prunes it...
             wire [PROBE_BUS_W+15:0] i_ela_sample = {i_user_probe, i_probe_bus};
 
             // ----------------------------------------------
