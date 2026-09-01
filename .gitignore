@@ -1,3 +1,10 @@
 /build/platforms/gowin/devices/GW1NR-9/C7I6/output/.artifacts
 /build/platforms/gowin/devices/GW1NR-9/C7I6/output
 /build/output
+/proj/foreign/gowin/GW1NR-9/C7I6/sim/output
+
+# fcapz capture output, which lands in the repo root.
+# Anchored with a leading slash so it cannot swallow the tracked device
+# and clock-frequency CSVs under build/platforms/gowin/.
+/*.csv
+/*.vcd

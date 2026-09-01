@@ -40,7 +40,10 @@ module top #(
 
     output  reg                 led,
 
-    inout   reg                 cpu,
+    inout   wire    [15:0]      cpu_data_async, // NOTE: these are asynchronous
+    inout   wire                cpu_clk_async,
+    inout   wire                cpu_wr_async,
+
 
     output  [CS_WIDTH-1:0]      psram_ck,
     output  [CS_WIDTH-1:0]      psram_ck_n,
@@ -81,11 +84,26 @@ module top #(
     input       [3:0]           ram_wstrb,
     output  reg [31:0]          ram_rdata,
     input                       ram_valid,
-    output  reg                 ram_ready
+    output  reg                 ram_ready,
+
+
+    // -------------- ela probes --------------
+    // NOTE: widths are mirrored in the
+    // autogen top wrapper - keep in sync.
+
+    input                           watch_clear_async,
+        // NOTE: from the ELA's EIO, re-zeroes
+        // the watched words over JTAG.
+
+    output      [PROBE_BUS_W-1:0]   probe_bus,
+    output      [PROBE_WATCH_W-1:0] probe_watch
 );
 localparam int DQ_WIDTH         = 16;
 localparam int CS_WIDTH         = 2;
 localparam int VERSION_CHARS    = 36;
+localparam int PROBE_BUS_W      = 128;
+localparam int PROBE_WATCH_W    = 128;
+localparam int WATCH_COUNT      = 4;
 localparam int MAX_IO_PER_CORE  = 16;
 localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
 
@@ -117,6 +135,15 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
     wire    [0:0]           i_mbus_sram_valid;
     reg     [0:0]           i_mbus_sram_ready;
 
+    wire    [31:0]          i_bus_addr;
+    wire    [31:0]          i_bus_wrdata;
+    wire    [31:0]          i_bus_rddata;
+    wire                    i_bus_wvalid;
+    wire                    i_bus_ren;
+
+    wire    [15:0]          i_bus_dbg_data;
+    wire    [1:0]           i_bus_dbg_beat;
+
 
 
     // ----------------------------------------------
@@ -124,16 +151,82 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
     // ----------------------------------------------
 
 
-    // NOTE: CPU
-    // Interface
-    // ------------------
+    // -------------------------------------------------
+    // RPI-FPGA BUS:
+    //
+    // The RPI is the master, the FPGA is the slave.
+    //
+    // -------------------------------------------------
 
-    // TODO: implement CPU bus...
+    // NOTE: the host owns the clock and the
+    // direction line, so we only ever read them.
+    // They are kept as inouts so a later revision
+    // could drive them without touching the pin
+    // constraints - park them at 'z until then...
 
-    assign cpu          = 'z;
+    assign cpu_clk_async = 1'bz;
+    assign cpu_wr_async  = 1'bz;
 
+    busV2 busV2_inst (
+        .clk                    (i_sysclk),
+        .srst                   (~i_soft_reset_n),
+
+        .cpu_data_async         (cpu_data_async),
+        .cpu_clk_async          (cpu_clk_async),
+        .cpu_wr_async           (cpu_wr_async),
+
+        .m_addr                 (i_bus_addr),
+        .m_wrdata               (i_bus_wrdata),
+        .m_wvalid               (i_bus_wvalid),
+        .m_ren                  (i_bus_ren),
+        .m_rddata               (i_bus_rddata),
+
+        .dbg_data               (i_bus_dbg_data),
+        .dbg_beat               (i_bus_dbg_beat),
+        .dbg_is_read            (),
+        .dbg_drive              ()
+    );
+
+
+    // Note: the following link to the user.sv module.
+    // Currently for data to be transfered, the user would need 
+    // to store info in the 
     assign cpu_ready    = 1'b1;
     assign cpu_rdata    = 0;
+
+
+
+    // --------------------------
+    // Watch memory locations:
+    //
+    // Written with AI, the following section is implemented for
+    // using the ELA and debugging errors.
+    // -------------------------
+
+    cpu_watch #(
+        .pWATCH_COUNT           (WATCH_COUNT),
+        .pPROBE_BUS_W           (PROBE_BUS_W),
+        .pPROBE_WATCH_W         (PROBE_WATCH_W)
+    ) cpu_watch_inst (
+        .clk                    (i_sysclk),
+        .srst                   (~i_soft_reset_n),
+
+        .s_addr                 (i_bus_addr),
+        .s_wrdata               (i_bus_wrdata),
+        .s_wvalid               (i_bus_wvalid),
+        .s_ren                  (i_bus_ren),
+        .s_rddata               (i_bus_rddata),
+
+        .dbg_data               (i_bus_dbg_data),
+        .dbg_beat               (i_bus_dbg_beat),
+
+        .cpu_clk_async          (cpu_clk_async),
+        .cpu_wr_async           (cpu_wr_async),
+        .watch_clear_async      (watch_clear_async),
+
+        .probe_bus              (probe_bus),
+        .probe_watch            (probe_watch)
+    );
 
 
     // NOTE: HyperRAM
