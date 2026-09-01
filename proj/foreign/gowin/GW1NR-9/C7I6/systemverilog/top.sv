@@ -40,9 +40,9 @@ module top #(
 
     output  reg                 led,
 
-    inout   wire    [15:0]      cpu_data, // NOTE: these are asynchronous
-    input                       cpu_clk,
-    input                       cpu_wr,
+    inout   wire    [15:0]      cpu_data_async, // NOTE: these are asynchronous
+    inout   wire                cpu_clk_async,
+    inout   wire                cpu_wr_async,
 
 
     output  [CS_WIDTH-1:0]      psram_ck,
@@ -158,13 +158,22 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
     //
     // -------------------------------------------------
 
+    // NOTE: the host owns the clock and the
+    // direction line, so we only ever read them.
+    // They are kept as inouts so a later revision
+    // could drive them without touching the pin
+    // constraints - park them at 'z until then...
+
+    assign cpu_clk_async = 1'bz;
+    assign cpu_wr_async  = 1'bz;
+
     busV2 busV2_inst (
         .clk                    (i_sysclk),
         .srst                   (~i_soft_reset_n),
 
-        .cpu_data_async         (cpu_data),
-        .cpu_clk_async          (cpu_clk),
-        .cpu_wr_async           (cpu_wr),
+        .cpu_data_async         (cpu_data_async),
+        .cpu_clk_async          (cpu_clk_async),
+        .cpu_wr_async           (cpu_wr_async),
 
         .m_addr                 (i_bus_addr),
         .m_wrdata               (i_bus_wrdata),
@@ -211,8 +220,8 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
         .dbg_data               (i_bus_dbg_data),
         .dbg_beat               (i_bus_dbg_beat),
 
-        .cpu_clk_async          (cpu_clk),
-        .cpu_wr_async           (cpu_wr),
+        .cpu_clk_async          (cpu_clk_async),
+        .cpu_wr_async           (cpu_wr_async),
         .watch_clear_async      (watch_clear_async),
 
         .probe_bus              (probe_bus),
