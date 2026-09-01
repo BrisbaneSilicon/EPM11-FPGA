@@ -33,7 +33,39 @@ This project allows the user to build an FPGA bitstream and program it onto the 
 It can also be extended by the user to include their custom, application-specific, RTL modules.
 
 The project workflow is fully scripted (fetch, build, program); it does not require the use of a GUI-based program at any point.
-<br><br>
+
+A core component of this project (together with its [EPM11-MCU](https://github.com/BrisbaneSilicon/EPM11-MCU) sister project) is a MCU-FPGA comms layer. This layer can be leveraged by the user for 'out of the box' MCU-FPGA communication, upon which their custom functionality can be developed.
+
+
+![MCU FPGA Comms](img/mcu_fpga_comms.png)
+
+
+After this project has been built and flashed to the FPGA, and its [EPM11-MCU](https://github.com/BrisbaneSilicon/EPM11-MCU) sister project flashed to the MCU, communication between the two IC's is as simple as:
+
+#### MCU
+
+On the RP2350 MCU, via a Python program or REPL:
+
+```python
+import fpga
+
+fpga.write(0x4, 0xFF)
+```
+
+#### FPGA
+
+The Python snippet above will produce a AXI-Lite (ish) write transaction, with wdata=0xFF and addr=0x4. This interface is plumbed to the user module '[user.sv](https://github.com/BrisbaneSilicon/EPM11-FPGA/blob/master/proj/common/systemverilog/user.sv)':
+
+```systemverilog
+output  reg [31:0]  cpu_addr,
+output  reg [31:0]  cpu_wdata,
+output  reg [3:0]   cpu_wstrb,
+input       [31:0]  cpu_rdata,
+output  reg         cpu_valid,
+input               cpu_ready
+```
+
+<br>
 
 ## Getting Started
 
