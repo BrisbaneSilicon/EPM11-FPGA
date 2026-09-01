@@ -2,7 +2,7 @@
 # EPM11-FPGA
 
 
-Example project for the [EPM11](https://brisbanesilicon.com.au/epm11) MCU-FPGA development board by [BrisbaneSilicon](https://brisbanesilicon.com.au/).
+Example project for the FPGA component of the [EPM11](https://brisbanesilicon.com.au/epm11) MCU-FPGA development board by [BrisbaneSilicon](https://brisbanesilicon.com.au/).
 <br><br>
 
 ## Table of Contents
