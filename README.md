@@ -1,5 +1,5 @@
 
-# EPM11
+# EPM11-FPGA
 
 
 Example project for the [EPM11](https://brisbanesilicon.com.au/epm11) MCU-FPGA development board by [BrisbaneSilicon](https://brisbanesilicon.com.au/).
