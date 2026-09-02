@@ -14,6 +14,7 @@ param (
     [int]$ClockFrequencyMhz = 51,       # system clock frequency
     [int]$PushbuttonReset   = 1,        # pushbutton reset enabled
     [int]$EmbeddedLogicAnalyzer = 0     # 0 = disabled, 1 = enabled
+    [int]$CpuBusTest = 0                # 0 = disabled, 1 = enabled
 )
 
 
@@ -89,6 +90,7 @@ module autogen_top_wrapper #(
     parameter int                           CLK_FREQUENCY_MHZ       = $ClockFrequencyMhz,
     parameter int                           PUSHBUTTON0_AS_RESET    = $PushbuttonReset,
     parameter int                           EMBEDDED_LOGIC_ANALYZER = $EmbeddedLogicAnalyzer
+    parameter int                           CPU_BUS_TEST            = $CpuBusTest
 
 ) (
     input                               pad_clk_27Mhz,
@@ -121,50 +123,54 @@ module autogen_top_wrapper #(
 localparam VERSION_CHARS    = 63;
 localparam DQ_WIDTH         = 16;
 localparam CS_WIDTH         = 2;
-
+localparam PROBE_BUS_W      = 128;
+localparam PROBE_WATCH_W    = 128;
+localparam WATCH_COUNT      = 4;
 
     // ----------------------------------------------
     //  Internal signals
     // ----------------------------------------------
 
-    reg                 i_sysclk;
-    reg                 i_sysclk_resetn  = 1'b0;
+    reg                         i_sysclk;
+    reg                         i_sysclk_resetn  = 1'b0;
 
-    reg                 i_microsecond_tick;
-    reg                 i_millisecond_tick;
-    reg                 i_second_tick;
+    reg                         i_microsecond_tick;
+    reg                         i_millisecond_tick;
+    reg                         i_second_tick;
 
-    reg         [11:0]  i_millisecond_counter;
+    reg [11:0]                  i_millisecond_counter;
 
-    reg         [15:0]  i_user_probe;
+    reg [15:0]                  i_user_probe;
 
-    reg                 i_jtag_activity;
+    reg                         i_jtag_activity;
 
-    reg         [31:0]  i_cpu_addr;
-    reg         [31:0]  i_cpu_wdata;
-    reg         [3:0]   i_cpu_wstrb;
-    reg         [31:0]  i_cpu_rdata;
-    reg                 i_cpu_valid;
-    reg                 i_cpu_ready;
+    reg [31:0]                  i_cpu_addr;
+    reg [31:0]                  i_cpu_wdata;
+    reg [3:0]                   i_cpu_wstrb;
+    reg [31:0]                  i_cpu_rdata;
+    reg                         i_cpu_valid;
+    reg                         i_cpu_ready;
 
-    reg         [31:0]  i_ram_addr;
-    reg         [31:0]  i_ram_wdata;
-    reg         [3:0]   i_ram_wstrb;
-    reg         [31:0]  i_ram_rdata;
-    reg                 i_ram_valid;
-    reg                 i_ram_ready;
+    reg [31:0]                  i_cpu_usr_addr;
+    reg [31:0]                  i_cpu_usr_wdata;
+    reg [3:0]                   i_cpu_usr_wstrb;
+    reg [31:0]                  i_cpu_usr_rdata;
+    reg                         i_cpu_usr_valid;
+    reg                         i_cpu_usr_ready;
 
-    reg                 i_top_led;
-    reg         [2:0]   i_ela_led;
+    reg [31:0]                  i_ram_addr;
+    reg [31:0]                  i_ram_wdata;
+    reg [3:0]                   i_ram_wstrb;
+    reg [31:0]                  i_ram_rdata;
+    reg                         i_ram_valid;
+    reg                         i_ram_ready;
 
-    localparam PROBE_BUS_W   = 128;
-    localparam PROBE_WATCH_W = 128;
-        // NOTE: must match the localparams
-        // of the same name in top.sv
+    reg                         i_top_led;
+    reg [2:0]                   i_ela_led;
 
-    wire [PROBE_BUS_W-1:0]      i_probe_bus;
-    wire [PROBE_WATCH_W-1:0]    i_probe_watch;
-    wire [7:0]                  i_eio_out;
+    reg [PROBE_BUS_W-1:0]       i_probe_bus;
+    reg [PROBE_WATCH_W-1:0]     i_probe_watch;
+    reg [7:0]                   i_eio_out;
 
 
     // ----------------------------------------------
@@ -228,15 +234,7 @@ localparam CS_WIDTH         = 2;
         .ram_wstrb                  (i_ram_wstrb),
         .ram_rdata                  (i_ram_rdata),
         .ram_valid                  (i_ram_valid),
-        .ram_ready                  (i_ram_ready),
-
-
-        // -------------- ela probes --------------
-
-        .watch_clear_async          (i_eio_out[0]),
-
-        .probe_bus                  (i_probe_bus),
-        .probe_watch                (i_probe_watch)
+        .ram_ready                  (i_ram_ready)
     );
 
 
@@ -254,12 +252,12 @@ localparam CS_WIDTH         = 2;
 
         .io                 (pad_io),
 
-        .cpu_addr           (i_cpu_addr),
-        .cpu_wdata          (i_cpu_wdata),
-        .cpu_wstrb          (i_cpu_wstrb),
-        .cpu_rdata          (i_cpu_rdata),
-        .cpu_valid          (i_cpu_valid),
-        .cpu_ready          (i_cpu_ready),
+        .cpu_addr           (i_cpu_usr_addr),
+        .cpu_wdata          (i_cpu_usr_wdata),
+        .cpu_wstrb          (i_cpu_usr_wstrb),
+        .cpu_rdata          (i_cpu_usr_rdata),
+        .cpu_valid          (i_cpu_usr_valid),
+        .cpu_ready          (i_cpu_usr_ready),
 
         .ram_addr           (i_ram_addr),
         .ram_wdata          (i_ram_wdata),
@@ -270,6 +268,54 @@ localparam CS_WIDTH         = 2;
 
         .probe              (i_user_probe)
     );
+
+    generate
+        if(!CPU_BUS_TEST) begin
+
+            assign i_cpu_usr_addr   = i_cpu_addr;
+            assign i_cpu_usr_wdata  = i_cpu_wdata;
+            assign i_cpu_usr_wstrb  = i_cpu_wstrb;
+            assign i_cpu_usr_valid  = i_cpu_valid;
+
+            assign i_cpu_rdata      = i_cpu_usr_rdata;
+            assign i_cpu_ready      = i_cpu_usr_ready;
+        end
+    endgenerate
+
+    // ----------------------------------------------
+    //  Bus Test
+    // ----------------------------------------------
+
+    generate
+        if(CPU_BUS_TEST) begin
+
+            cpu_bus_test #(
+                .WATCH_COUNT        (WATCH_COUNT),
+                .PROBE_BUS_W        (PROBE_BUS_W),
+                .PROBE_WATCH_W      (PROBE_WATCH_W)
+            ) cpu_bus_test_inst (
+                .clk                (i_sysclk),
+                .srst               (~i_sysclk_resetn),
+
+                .s_addr             (i_cpu_addr),
+                .s_wrdata           (i_cpu_wdata),
+                .s_wstrb            (i_cpu_wstrb),
+                .s_rddata           (i_cpu_rdata),
+                .s_valid            (i_cpu_valid),
+                .s_ready            (i_cpu_ready),
+
+                .dbg_data           (i_bus_dbg_data),
+                .dbg_beat           (i_bus_dbg_beat),
+
+                .cpu_clk_async      (pad_cpu[16]),
+                .cpu_wr_async       (pad_cpu[17]),
+                .watch_clear_async  (i_eio_out[0]),
+
+                .probe_bus          (probe_bus),
+                .probe_watch        (probe_watch)
+            );
+        end
+    endgenerate
 
 
     // ----------------------------------------------
@@ -312,7 +358,7 @@ localparam CS_WIDTH         = 2;
             // readback goes from 4 words per sample
             // to 5...
 
-            localparam ELA_USER_PROBE   = 0;
+            localparam ELA_USER_PROBE   = CPU_BUS_TEST;
 
             localparam ELA_SAMPLE_WIDTH = PROBE_BUS_W + (ELA_USER_PROBE * 16);
             localparam ELA_SAMPLE_DEPTH = 64;
@@ -333,8 +379,11 @@ localparam CS_WIDTH         = 2;
                 end
             end
 
-            assign i_probe = { 7'b0000000, i_buttons[1], i_counter, i_user_probe};
-                // NOTE: modify probe regs as required...
+            if(!CPU_BUS_TEST) begin
+                assign i_probe = { 7'b0000000, i_buttons[1], i_counter, i_user_probe};
+            end
+
+
             // NOTE: built at full width, then
             // sliced. With ELA_USER_PROBE at 0 the
             // slice drops the user probe and
