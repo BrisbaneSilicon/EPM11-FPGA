@@ -40,12 +40,12 @@ module user (
 
     // -------------- cpu --------------
 
-    output  reg [31:0]  cpu_addr,
-    output  reg [31:0]  cpu_wdata,
-    output  reg [3:0]   cpu_wstrb,
-    input       [31:0]  cpu_rdata,
-    output  reg         cpu_valid,
-    input               cpu_ready,
+    input       [31:0]  cpu_addr,
+    input       [31:0]  cpu_wdata,
+    input       [3:0]   cpu_wstrb,
+    output  reg [31:0]  cpu_rdata,
+    input               cpu_valid,
+    output  reg         cpu_ready,
 
 
     // -------------- memory --------------
@@ -85,10 +85,15 @@ module user (
 
     always @(posedge sysclk) begin
         probe[15:0] <= io[16:1];
-            // NOTE: default
+            // NOTE: simply probe the io pins
+
+        cpu_ready <= cpu_valid & ~cpu_ready;
+            // NOTE: simply acknowlege any activity
+            // on the CPU bus
 
         if (sysclk_resetn == 1'b0) begin
-            probe <= 0;
+            probe       <= 0;
+            cpu_ready   <= 1'b0;
         end
     end
 

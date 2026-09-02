@@ -249,6 +249,7 @@ The most commonly used are listed below.
 | -y, --list_supported_system_clock_frequencies | List the supported system clock frequencies and exit. |
 | -k, --clock_frequency FREQUENCY_MHZ | Use a frequency of FREQUENCY_MHZ for the system clock (default 51 MHz). |
 | -e, --embedded_logic_analyzer| Include an Embedded Logic Analyzer (fpgacapZero) in the bitstream. |
+| -t, --cpu_bus_test | Include a readback register set for the CPU bus and ELA the bus signaling. Required for EPM11-MCU 'cpu_bus_test.py' test program. |
 | -a, --clean_all_platforms | Perform cleanup of the entire build and exit. |
 
 ### Windows
@@ -296,7 +297,6 @@ The most commonly used are listed below.
 | -d, --list_default_target | List the default build target. |
 | -c, --clean_target_prior | Clean TARGET build prior to building and programming the EPM11 board. |
 | -b, --check_if_target_built | Print firmware built status of provided target board and exit. |
-| -t, --custom_target_device CUSTOM_TARGET | Instead of the default target, target 'CUSTOM_TARGET'. |
 | -o, --open_fpga_loader CUSTOM_TARGET | Program the EPM11 using 'openFPGALoader' instead of the GoWIN toolchain (Linux only). |
 <br>
 

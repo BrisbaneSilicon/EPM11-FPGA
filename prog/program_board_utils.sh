@@ -42,7 +42,6 @@ print_program_board_help () {
     echo -e "\t${boldf}-l, --list_supported_targets${normf}\n\t\tList supported build targets and exit.\n"
     echo -e "\t${boldf}-s, --check_if_target_supported${normf}\n\t\tPrint supported status of provided target board and exit.\n"
     echo -e "\t${boldf}-b, --check_if_target_built${normf}\n\t\tPrint firmware built status of provided target board and exit.\n"
-    echo -e "\t${boldf}-t, --custom_target_device${normf} CUSTOM_TARGET\n\t\tInstead of the default target, target 'CUSTOM_TARGET'.\n"
     echo -e "\t${boldf}-o, --open_fpga_loader${normf}\n\t\tProgram the EPM11 using 'openFPGALoader' instead of the GoWIN toolchain.\n"
     echo -e "${boldf}AUTHOR${normf}"
     echo -e "\tWritten by Craig Haywood\n"

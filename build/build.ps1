@@ -72,7 +72,6 @@ if ($h) {
     Write-Host "${boldf}    Build Related${normf}"
     Write-Host "`t${boldf}-r, -disable_pushbutton_reset${normf}`n`t`tDisable pushbutton 1 as hard reset.`n"
     Write-Host "`t${boldf}-e, -embedded_logic_analyzer${normf}`n`t`tInclude an Embedded Logic Analyzer (fpgacapZero) in the bitstream.`n"
-    Write-Host "`t${boldf}-t, -custom_target${normf} ${underlinef}CUSTOM_TARGET${normf}`n`t`tPerform build targeting CUSTOM_TARGET.`n"
     Write-Host "`t${boldf}-k, -clock_frequency${normf} ${underlinef}FREQUENCY_MHZ${normf}`n`t`tUse a frequency of FREQUENCY_MHZ for the system clock (default 51 MHz)."
     Write-Host "`t`tSee '-y, -list_supported_system_clock_frequencies' above, for more information.`n"
     Write-Host "`t${boldf}-f, -platform${normf} PLATFORM`n`t`tSpecify PLATFORM for build or clean.`n"

@@ -40,7 +40,9 @@ module top #(
 
     output  reg                 led,
 
-    inout   reg                 cpu,
+    inout   wire    [15:0]      cpu_data_async,
+    input                       cpu_clk_async,
+    input                       cpu_wr_async,
 
     output  [CS_WIDTH-1:0]      psram_ck,
     output  [CS_WIDTH-1:0]      psram_ck_n,
@@ -66,12 +68,12 @@ module top #(
 
     // -------------- cpu --------------
 
-    input       [31:0]          cpu_addr,
-    input       [31:0]          cpu_wdata,
-    input       [3:0]           cpu_wstrb,
-    output  reg [31:0]          cpu_rdata,
-    input                       cpu_valid,
-    output  reg                 cpu_ready,
+    output  reg [31:0]          cpu_addr,
+    output  reg [31:0]          cpu_wdata,
+    output  reg [3:0]           cpu_wstrb,
+    input       [31:0]          cpu_rdata,
+    output  reg                 cpu_valid,
+    input                       cpu_ready,
 
 
     // -------------- memory --------------
@@ -117,6 +119,8 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
     wire    [0:0]           i_mbus_sram_valid;
     reg     [0:0]           i_mbus_sram_ready;
 
+    reg                     i_cpu_wstrb;
+
 
 
     // ----------------------------------------------
@@ -124,16 +128,32 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
     // ----------------------------------------------
 
 
-    // NOTE: CPU
-    // Interface
-    // ------------------
+    // -------------------------------------------------
+    // RPI-FPGA BUS:
+    //
+    // The RPI is the master, the FPGA is the slave.
+    //
+    // -------------------------------------------------
 
-    // TODO: implement CPU bus...
+    cpu_bus cpu_bus_inst (
+        .clk            (i_sysclk),
+        .srst           (~i_soft_reset_n),
 
-    assign cpu          = 'z;
+        .cpu_data_async (cpu_data_async),
+        .cpu_clk_async  (cpu_clk_async),
+        .cpu_wr_async   (cpu_wr_async),
 
-    assign cpu_ready    = 1'b1;
-    assign cpu_rdata    = 0;
+        .m_addr         (cpu_addr),
+        .m_wdata        (cpu_wdata),
+        .m_wstrb        (i_cpu_wstrb),
+        .m_rdata        (cpu_rdata),
+        .m_valid        (cpu_valid),
+        .m_ready        (cpu_ready)
+    );
+
+    assign cpu_wstrb = { i_cpu_wstrb, i_cpu_wstrb,
+                            i_cpu_wstrb,  i_cpu_wstrb };
+
 
 
     // NOTE: HyperRAM

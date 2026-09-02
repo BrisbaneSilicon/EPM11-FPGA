@@ -87,5 +87,5 @@ IO_PORT "pad_cpu[12]"               IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
 IO_PORT "pad_cpu[13]"               IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
 IO_PORT "pad_cpu[14]"               IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
 IO_PORT "pad_cpu[15]"               IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
-IO_PORT "pad_cpu[16]"               IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
-IO_PORT "pad_cpu[17]"               IO_TYPE=LVCMOS33    PULL_MODE=DOWN  DRIVE=8;
+IO_PORT "pad_cpu[16]"               IO_TYPE=LVCMOS33    PULL_MODE=DOWN;
+IO_PORT "pad_cpu[17]"               IO_TYPE=LVCMOS33    PULL_MODE=DOWN;

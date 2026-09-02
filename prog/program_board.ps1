@@ -63,7 +63,6 @@ function Show-Help {
     Write-Host "`t${boldf}-l, -list_supported_targets${normf}`n`t`tList supported build targets and exit.`n"
     Write-Host "`t${boldf}-s, -check_if_target_supported${normf}`n`t`tPrint supported status of provided target board and exit.`n"
     Write-Host "`t${boldf}-b, -check_if_target_built${normf}`n`t`tPrint firmware built status of provided target board and exit.`n"
-    Write-Host "`t${boldf}-t, -custom_target${normf} CUSTOM_TARGET`n`t`tInstead of the default target, target 'CUSTOM_TARGET'. (not implemented on Windows)`n"
     Write-Host "`t${boldf}-k, -clock_frequency${normf} ${underlinef}FREQUENCY_MHZ${normf}`n`t`tSystem clock frequency in MHz passed to the build script when auto-triggering a build."
     Write-Host "`t`tIgnored when using -m. Valid values: 51, 66, 75, 81, 87 (default: 51).`n"
     Write-Host "`t${boldf}-jtag_frequency${normf} ${underlinef}FREQ${normf}`n`t`tOverride the JTAG programming clock frequency (default: 0.02MHz)."
