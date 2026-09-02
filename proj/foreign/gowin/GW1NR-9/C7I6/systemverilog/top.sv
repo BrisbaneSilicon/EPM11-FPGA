@@ -25,6 +25,8 @@
 
 `timescale 1ns/1ps
 
+Test git text yay
+
 module top #(
     parameter reg   [(8*VERSION_CHARS)-1:0]     VERSION,
     parameter int                               CLK_FREQUENCY_MHZ,
@@ -155,7 +157,7 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
                             i_cpu_wstrb,  i_cpu_wstrb };
 
 
-
+    
     // NOTE: HyperRAM
     // ------------------
 
