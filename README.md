@@ -57,12 +57,12 @@ fpga.write(0x4, 0xFF)
 The Python snippet above will produce a AXI-Lite (ish) write transaction, with wdata=0xFF and addr=0x4. This interface is plumbed to the user module '[user.sv](https://github.com/BrisbaneSilicon/EPM11-FPGA/blob/master/proj/common/systemverilog/user.sv)':
 
 ```systemverilog
-output  reg [31:0]  cpu_addr,
-output  reg [31:0]  cpu_wdata,
-output  reg [3:0]   cpu_wstrb,
-input       [31:0]  cpu_rdata,
-output  reg         cpu_valid,
-input               cpu_ready
+input       [31:0]  cpu_addr,
+input       [31:0]  cpu_wdata,
+input       [3:0]   cpu_wstrb,
+output  reg [31:0]  cpu_rdata,
+input               cpu_valid,
+output  reg         cpu_ready,
 ```
 
 <br>
