@@ -13,6 +13,9 @@ param (
     [Alias('embedded_logic_analyzer')]
     [switch]$e,
 
+    [Alias('cpu_bus_test')]
+    [switch]$t,
+
     [Alias('proj_only')]
     [switch]$p,
 
@@ -38,9 +41,6 @@ param (
     [switch]$c,
 
     # ---- NOT YET IMPLEMENTED, NOT IMPORTANT FOR CURRENT BOARD----
-    [Alias('custom_target')]
-    [string]$t          = "",
-
     [Alias('platform')]
     [string]$f          = "",
 
@@ -72,6 +72,7 @@ if ($h) {
     Write-Host "${boldf}    Build Related${normf}"
     Write-Host "`t${boldf}-r, -disable_pushbutton_reset${normf}`n`t`tDisable pushbutton 1 as hard reset.`n"
     Write-Host "`t${boldf}-e, -embedded_logic_analyzer${normf}`n`t`tInclude an Embedded Logic Analyzer (fpgacapZero) in the bitstream.`n"
+    Write-Host "`t${boldf}-t, -cpu_bus_test${normf}`n`t`tInclude a readback register set for the CPU bus and ELA the bus signaling.`n"
     Write-Host "`t${boldf}-k, -clock_frequency${normf} ${underlinef}FREQUENCY_MHZ${normf}`n`t`tUse a frequency of FREQUENCY_MHZ for the system clock (default 51 MHz)."
     Write-Host "`t`tSee '-y, -list_supported_system_clock_frequencies' above, for more information.`n"
     Write-Host "`t${boldf}-f, -platform${normf} PLATFORM`n`t`tSpecify PLATFORM for build or clean.`n"
@@ -89,6 +90,7 @@ if ($h) {
 
 # ---- CORE PARAMS ----
 $EmbeddedLogicAnalyzer 	= if ($e) { 1 } else { 0 }
+$CpuBusTest             = if ($t) { 1 } else { 0 }
 $ClockMhz               = $k
 $PushbuttonReset        = if ($r) { 0 } else { 1 }
 $DoProjectGenOnly       = if ($p) { "true" } else { "false" }
@@ -226,25 +228,6 @@ if ($a) {
     exit 0
 }
 
-# ---- PARTIALLY IMPLEMENTED FLAGS ----
-if ($t) {
-    # check if the target exists in the CSV
-    $customDevice = $devices | Where-Object { $_.'Build Target'.Trim() -eq $t }
-    if (-not $customDevice) {
-        Write-Host ""
-        Write-Host "ERROR: Build target '$t' is not supported."
-        Write-Host ""
-        Write-Host "Supported targets:"
-        $devices | ForEach-Object { Write-Host "  $($_.'Build Target'.Trim())" }
-        Write-Host ""
-        Write-Host "Note: -t / -custom_target is not yet fully implemented."
-        Write-Host "      Only the default target '$ProjectName' is currently supported."
-        exit 1
-    }
-    Write-Host "NOTE: -t / -custom_target is not yet fully implemented."
-    Write-Host "      Continuing with default target: $ProjectName"
-}
-
 # ---- DUMMY HANDLERS FOR NOT YET IMPLEMENTED FLAGS ----
 
 
@@ -288,7 +271,8 @@ Write-Host "Generating autogen_top_wrapper.sv..."
     -TopWrapperFilename      "autogen_top_wrapper.sv" `
     -ClockFrequencyMhz       $ClockMhz `
     -PushbuttonReset         $PushbuttonReset `
-    -EmbeddedLogicAnalyzer   $EmbeddedLogicAnalyzer
+    -EmbeddedLogicAnalyzer   $EmbeddedLogicAnalyzer `
+    -CpuBusTest              $CpuBusTest
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Failed to generate autogen_top_wrapper.sv"

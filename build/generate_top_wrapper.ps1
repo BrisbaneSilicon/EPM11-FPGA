@@ -13,7 +13,7 @@ param (
     [string]$TopWrapperFilename,        # filename e.g. "autogen_top_wrapper.sv"
     [int]$ClockFrequencyMhz = 51,       # system clock frequency
     [int]$PushbuttonReset   = 1,        # pushbutton reset enabled
-    [int]$EmbeddedLogicAnalyzer = 0     # 0 = disabled, 1 = enabled
+    [int]$EmbeddedLogicAnalyzer = 0,    # 0 = disabled, 1 = enabled
     [int]$CpuBusTest = 0                # 0 = disabled, 1 = enabled
 )
 
@@ -89,7 +89,7 @@ module autogen_top_wrapper #(
 
     parameter int                           CLK_FREQUENCY_MHZ       = $ClockFrequencyMhz,
     parameter int                           PUSHBUTTON0_AS_RESET    = $PushbuttonReset,
-    parameter int                           EMBEDDED_LOGIC_ANALYZER = $EmbeddedLogicAnalyzer
+    parameter int                           EMBEDDED_LOGIC_ANALYZER = $EmbeddedLogicAnalyzer,
     parameter int                           CPU_BUS_TEST            = $CpuBusTest
 
 ) (
