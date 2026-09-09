@@ -306,6 +306,12 @@ The most commonly used are listed below.
 > sudo rmmod ftdi_sio
 > ```
 
+> [!WARNING]
+> On some flavors of Linux, the user must call the 'programmer_cli' binary (utilized by 'program_board.sh') with sudo priviledges, for example:
+> ```bash
+> sudo /opt/Gowin/Gowin_V1.9.12_linux/Programmer/bin/programmer_cli/programmer_cli --device GW1NR-9C --operation_index 5 -f /home/craig/Documents/Projects/BrisbaneSilicon/Git_Repos/EPM11-FPGA/build/platforms/gowin/devices/GW1NR-9/C7I6/output/.artifacts/EPM11.fs
+> ```
+
 ### Windows
 
 #### Program Board
