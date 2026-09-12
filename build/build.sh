@@ -83,6 +83,7 @@ check_target_supported_for_platform_exit_on_failure() {
 }
 
 embedded_logic_analyzer=0
+cpu_bus_test=0
 pushbutton_reset=1
 target=EPM11
 
@@ -152,18 +153,16 @@ while [ $# -gt 0 ]; do
 
             exit
             ;;
-        -t|--custom_target)
-            chk_opt $@
-
-            target=$2
-            shift 2
-            ;;
         -r|--disable_pushbutton_reset)
             pushbutton_reset=0
             shift 1
             ;;
         -e|--embedded_logic_analyzer)
             embedded_logic_analyzer=1
+            shift 1
+            ;;
+        -t|--cpu_bus_test)
+            cpu_bus_test=1
             shift 1
             ;;
         -f|--platform)

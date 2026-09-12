@@ -25,6 +25,11 @@ proc gowin_systemverilog {} {
 
         top.sv
 
+        dff_synchroniser.sv
+
+        cpu_bus.sv
+        cpu_bus_test.sv
+
         ram_memory.sv
         psram_controller.sv
     } {

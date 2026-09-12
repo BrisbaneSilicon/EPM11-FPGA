@@ -1,8 +1,8 @@
 
-# EPM11
+# EPM11-FPGA
 
 
-Example project for the [EPM11](https://brisbanesilicon.com.au/epm11) MCU-FPGA development board by [BrisbaneSilicon](https://brisbanesilicon.com.au/).
+Example project for the FPGA component of the [EPM11](https://brisbanesilicon.com.au/epm11) MCU-FPGA development board by [BrisbaneSilicon](https://brisbanesilicon.com.au/).
 <br><br>
 
 ## Table of Contents
@@ -33,7 +33,39 @@ This project allows the user to build an FPGA bitstream and program it onto the 
 It can also be extended by the user to include their custom, application-specific, RTL modules.
 
 The project workflow is fully scripted (fetch, build, program); it does not require the use of a GUI-based program at any point.
-<br><br>
+
+A core component of this project (together with its [EPM11-MCU](https://github.com/BrisbaneSilicon/EPM11-MCU) sister project) is a MCU-FPGA comms layer. This layer can be leveraged by the user for 'out of the box' MCU-FPGA communication, upon which their custom functionality can be developed.
+
+
+![MCU FPGA Comms](img/mcu_fpga_comms.png)
+
+
+After this project has been built and flashed to the FPGA, and its [EPM11-MCU](https://github.com/BrisbaneSilicon/EPM11-MCU) sister project flashed to the MCU, communication between the two IC's is as simple as:
+
+#### MCU
+
+On the RP2350 MCU, via a Python program or REPL:
+
+```python
+import fpga
+
+fpga.write(0x4, 0xFF)
+```
+
+#### FPGA
+
+The Python snippet above will produce a AXI-Lite (ish) write transaction, with wdata=0xFF and addr=0x4. This interface is plumbed to the user module '[user.sv](https://github.com/BrisbaneSilicon/EPM11-FPGA/blob/master/proj/common/systemverilog/user.sv)':
+
+```systemverilog
+input       [31:0]  cpu_addr,
+input       [31:0]  cpu_wdata,
+input       [3:0]   cpu_wstrb,
+output  reg [31:0]  cpu_rdata,
+input               cpu_valid,
+output  reg         cpu_ready,
+```
+
+<br>
 
 ## Getting Started
 
@@ -217,6 +249,7 @@ The most commonly used are listed below.
 | -y, --list_supported_system_clock_frequencies | List the supported system clock frequencies and exit. |
 | -k, --clock_frequency FREQUENCY_MHZ | Use a frequency of FREQUENCY_MHZ for the system clock (default 51 MHz). |
 | -e, --embedded_logic_analyzer| Include an Embedded Logic Analyzer (fpgacapZero) in the bitstream. |
+| -t, --cpu_bus_test | Include a readback register set for the CPU bus and ELA the bus signaling. Required for EPM11-MCU 'cpu_bus_test.py' test program. |
 | -a, --clean_all_platforms | Perform cleanup of the entire build and exit. |
 
 ### Windows
@@ -264,7 +297,6 @@ The most commonly used are listed below.
 | -d, --list_default_target | List the default build target. |
 | -c, --clean_target_prior | Clean TARGET build prior to building and programming the EPM11 board. |
 | -b, --check_if_target_built | Print firmware built status of provided target board and exit. |
-| -t, --custom_target_device CUSTOM_TARGET | Instead of the default target, target 'CUSTOM_TARGET'. |
 | -o, --open_fpga_loader CUSTOM_TARGET | Program the EPM11 using 'openFPGALoader' instead of the GoWIN toolchain (Linux only). |
 <br>
 
@@ -272,6 +304,12 @@ The most commonly used are listed below.
 > If you have previously loaded an FTDI driver in order to utilise the user comms, you will need to remove it prior to programming the board:
 > ```bash
 > sudo rmmod ftdi_sio
+> ```
+
+> [!WARNING]
+> On some flavors of Linux, the user must call the 'programmer_cli' binary (utilized by 'program_board.sh') with sudo priviledges, for example:
+> ```bash
+> sudo /opt/Gowin/Gowin_V1.9.12_linux/Programmer/bin/programmer_cli/programmer_cli --device GW1NR-9C --operation_index 5 -f /home/craig/Documents/Projects/BrisbaneSilicon/Git_Repos/EPM11-FPGA/build/platforms/gowin/devices/GW1NR-9/C7I6/output/.artifacts/EPM11.fs
 > ```
 
 ### Windows
