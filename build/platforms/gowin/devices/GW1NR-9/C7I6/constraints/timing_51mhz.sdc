@@ -23,3 +23,8 @@ set_false_path -from [get_clocks {clk_tck}]         -to [get_clocks {clk_27Mhz}]
 
 set_false_path -from [get_clocks {clk_51Mhz}]       -to [get_clocks {clk_tck}]
 set_false_path -from [get_clocks {clk_tck}]         -to [get_clocks {clk_51Mhz}]
+
+
+# NOTE: RPI-FPGA bus pins, to the first register each one feeds
+
+set_max_delay -from [get_ports {pad_cpu[*]}] -to [get_clocks {clk_51Mhz}] 4.000

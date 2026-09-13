@@ -142,8 +142,6 @@ localparam WATCH_COUNT      = 4;
 
     reg [15:0]                  i_user_probe;
 
-    reg                         i_jtag_activity;
-
     reg [31:0]                  i_cpu_addr;
     reg [31:0]                  i_cpu_wdata;
     reg [3:0]                   i_cpu_wstrb;
@@ -166,11 +164,14 @@ localparam WATCH_COUNT      = 4;
     reg                         i_ram_ready;
 
     reg                         i_top_led;
-    reg [2:0]                   i_ela_led;
 
-    reg [PROBE_BUS_W-1:0]       i_probe_bus;
-    reg [PROBE_WATCH_W-1:0]     i_probe_watch;
-    reg [7:0]                   i_eio_out;
+    reg [31:0]                  i_bus_addr;
+    reg [31:0]                  i_bus_data;
+    reg                         i_bus_write;
+    reg                         i_bus_done;
+    reg [15:0]                  i_bus_pin_data;
+    reg                         i_bus_pin_clk;
+    reg                         i_bus_pin_wr;
 
 
     // ----------------------------------------------
@@ -234,7 +235,17 @@ localparam WATCH_COUNT      = 4;
         .ram_wstrb                  (i_ram_wstrb),
         .ram_rdata                  (i_ram_rdata),
         .ram_valid                  (i_ram_valid),
-        .ram_ready                  (i_ram_ready)
+        .ram_ready                  (i_ram_ready),
+
+        // -------------- bus monitor --------------
+
+        .bus_addr                   (i_bus_addr),
+        .bus_data                   (i_bus_data),
+        .bus_write                  (i_bus_write),
+        .bus_done                   (i_bus_done),
+        .bus_pin_data               (i_bus_pin_data),
+        .bus_pin_clk                (i_bus_pin_clk),
+        .bus_pin_wr                 (i_bus_pin_wr)
     );
 
 
@@ -304,185 +315,55 @@ localparam WATCH_COUNT      = 4;
                 .s_valid            (i_cpu_valid),
                 .s_ready            (i_cpu_ready),
 
-                .dbg_data           (i_bus_dbg_data),
-                .dbg_beat           (i_bus_dbg_beat),
+                .dbg_data           (16'h0000),
+                .dbg_beat           (2'b00),
 
-                .cpu_clk_async      (pad_cpu[16]),
-                .cpu_wr_async       (pad_cpu[17]),
-                .watch_clear_async  (i_eio_out[0]),
+                .cpu_clk_async      (i_bus_pin_clk),
+                .cpu_wr_async       (i_bus_pin_wr),
+                .watch_clear_async  (1'b0),
 
-                .probe_bus          (probe_bus),
-                .probe_watch        (probe_watch)
+                .probe_bus          (),
+                .probe_watch        ()
             );
         end
     endgenerate
 
 
     // ----------------------------------------------
-    //  ELA Example
+    //  Embedded Logic Analyzer
     // ----------------------------------------------
 
     generate
-        if(EMBEDDED_LOGIC_ANALYZER) begin
+        if (EMBEDDED_LOGIC_ANALYZER) begin
 
-            // ----------------------------------------------
-            //  Internal signals (ELA-internal)
-            // ----------------------------------------------
+            ela_probe ela_probe_inst (
+                .clk                (i_sysclk),
+                .resetn             (i_sysclk_resetn),
 
-            // NOTE: SAMPLE_W is the width captured
-            // per sample. NUM_CHANNELS is a
-            // build-time MUX, not extra width - it
-            // gives N separate SAMPLE_W buses and
-            // you capture one of them, chosen at
-            // arm time. So the whole bus goes in
-            // SAMPLE_W, channels stay 1...
+                .bus_addr           (i_bus_addr),
+                .bus_data           (i_bus_data),
+                .bus_write          (i_bus_write),
+                .bus_done           (i_bus_done),
 
-            // NOTE: user.sv's
-            // own probe
-            // ------------
-            //
-            // Set ELA_USER_PROBE to 1 to capture
-            // user.sv's 16-bit probe alongside the
-            // bus. That is the ONLY edit needed
-            // here - the sample width and the
-            // concatenation both follow from it.
-            //
-            // Then add a user_probe entry to
-            // prog/epm11_bus.prob so the host knows
-            // how to decode it - name user_probe,
-            // width 16, lsb 128 - and change
-            // sample_width there to 144.
-            //
-            // Costs no extra BSRAM, since 128 and
-            // 144 bits both need 8 blocks, but
-            // readback goes from 4 words per sample
-            // to 5...
+                .pin_data           (i_bus_pin_data),
+                .pin_clk            (i_bus_pin_clk),
+                .pin_wr             (i_bus_pin_wr),
 
-            localparam ELA_USER_PROBE   = CPU_BUS_TEST;
+                .user_probe         (i_user_probe),
 
-            localparam ELA_SAMPLE_WIDTH = PROBE_BUS_W + (ELA_USER_PROBE * 16);
-            localparam ELA_SAMPLE_DEPTH = 64;
-            localparam ELA_CHANNELS     = 1;
-
-            reg                                         i_sysclk_reset;
-
-            reg [1:0]                                   i_buttons;
-            reg [ELA_SAMPLE_WIDTH-1:0]                  i_counter;
-
-            always @(posedge i_sysclk) begin
-                if (i_sysclk_resetn == 1'b0) begin
-                    i_counter   <= 0;
-                    i_buttons   <= 0;
-                end else begin
-                    i_counter   <= i_counter + 1'b1;
-                    i_buttons   <= ~pad_user_buttons_n;
-                end
-            end
-
-            if(!CPU_BUS_TEST) begin
-                assign i_probe = { 7'b0000000, i_buttons[1], i_counter, i_user_probe};
-            end
-
-
-            // NOTE: built at full width, then
-            // sliced. With ELA_USER_PROBE at 0 the
-            // slice drops the user probe and
-            // synthesis prunes it...
-            wire [PROBE_BUS_W+15:0] i_ela_sample = {i_user_probe, i_probe_bus};
-
-            // ----------------------------------------------
-            //  Embedded Logic Analyser
-            // ----------------------------------------------
-
-            assign i_sysclk_reset = ~i_sysclk_resetn;
-
-            fcapz_ela_gowin #(
-                .SAMPLE_W       (ELA_SAMPLE_WIDTH),
-                .DEPTH          (ELA_SAMPLE_DEPTH),
-                .NUM_CHANNELS   (ELA_CHANNELS),
-
-                .STOR_QUAL      (1),
-                    // NOTE: qualify capture with CHANGED on
-                    // pclk, which is probe_bus[0]:
-                    //
-                    //   --stor-qual-mode 8 --stor-qual-mask 0x01
-                    //
-                    // That stores one sample per pclk edge.
-                    // A free-running 51 MHz capture 64 deep
-                    // spans 1.25 us, which a slow host burst
-                    // will never fit into.
-                    //
-                    // It has to be a LOW bit: fcapz_ela.v
-                    // zero-extends the qualification value
-                    // and mask from 32-bit registers when
-                    // SAMPLE_W > 32, so only bits below 32
-                    // can ever be matched.
-
-                .EIO_EN         (1),
-                .EIO_IN_W       (PROBE_WATCH_W),
-                .EIO_OUT_W      (8)
-                    // NOTE: the four watched words are slow
-                    // state, not waveform. EIO reads them on
-                    // demand for no BSRAM, instead of storing
-                    // the same value 64 times over.
-            ) u_ela (
-                .clk            (i_sysclk),
-                    // NOTE: this clock must be
-                    // at least ~10x the JTAG TCK
-                    // (~2 MHz for EPM11)
-                .jtag_activity  (i_jtag_activity),
-
-                .sample_clk     (i_sysclk),
-                .sample_rst     (i_sysclk_reset),
-                .probe_in       (i_ela_sample[ELA_SAMPLE_WIDTH-1:0]),
-
-                .eio_probe_in   (i_probe_watch),
-                .eio_probe_out  (i_eio_out),
-                    // NOTE: eio_out[0] re-zeroes the
-                    // watched words over JTAG.
-
-                .tms_pad_i      (tms_pad_i),
-                .tck_pad_i      (tck_pad_i),
-                .tdi_pad_i      (tdi_pad_i),
-                .tdo_pad_o      (tdo_pad_o)
+                .tms                (tms_pad_i),
+                .tck                (tck_pad_i),
+                .tdi                (tdi_pad_i),
+                .tdo                (tdo_pad_o)
             );
-
-            // NOTE: We control the
-            // leds in this case
-            // ---------------------
-
-            always @(posedge i_sysclk) begin
-                if (i_millisecond_tick == 1'b1) begin
-                    if (i_millisecond_counter == 0 || i_millisecond_counter == 500) begin
-                        i_ela_led[0] <= ~i_ela_led[0];
-                    end
-                end
-
-                if (i_jtag_activity == 1'b1) begin
-                    i_ela_led[1] <= 1'b1;
-                end
-                if (|i_millisecond_counter[6:0] == 1'b0) begin
-                    i_ela_led[1] <= 0;
-                end
-
-                i_ela_led[2] <= i_buttons[1];
-
-                if (i_sysclk_resetn == 1'b0) begin
-                    i_ela_led <= 0;
-                end
-            end
-
-            assign pad_led_n = ~(|i_ela_led);
 
         end else begin
 
             assign tdo_pad_o = 1'b0;
-
-            assign pad_led_n = ~i_top_led;
-
-            assign i_eio_out = 8'h00;
         end
     endgenerate
+
+    assign pad_led_n = ~i_top_led;
 
 endmodule
 "@

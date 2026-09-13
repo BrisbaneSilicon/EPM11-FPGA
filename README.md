@@ -249,7 +249,7 @@ The most commonly used are listed below.
 | -y, --list_supported_system_clock_frequencies | List the supported system clock frequencies and exit. |
 | -k, --clock_frequency FREQUENCY_MHZ | Use a frequency of FREQUENCY_MHZ for the system clock (default 51 MHz). |
 | -e, --embedded_logic_analyzer| Include an Embedded Logic Analyzer (fpgacapZero) in the bitstream. |
-| -t, --cpu_bus_test | Include a readback register set for the CPU bus and ELA the bus signaling. Required for EPM11-MCU 'cpu_bus_test.py' test program. |
+| -t, --cpu_bus_test | Include a readback register set for the CPU bus. Required for EPM11-MCU 'cpu_bus_test.py' test program. |
 | -a, --clean_all_platforms | Perform cleanup of the entire build and exit. |
 
 ### Windows
@@ -356,68 +356,104 @@ For more detailed windows troubleshooting steps, see TROUBLESHOOTING.txt.
 
 ## Embedded Logic Analyzer
 
-This project can be built to include an Embedded Logic Analyzer to showcase injecting and probing an fpgacapZero ELA core. Ensure you have completed [OpenOCD Setup](#openocd-setup) and [FcapZ Setup](#fcapz-setup) and pulled the 'fpgaCapZero' foreign git submodule (command below) prior to performing the steps below.
+The firmware can include an Embedded Logic Analyzer, an [fpgacapZero](https://github.com/lcapossio/fpgacapZero) core, for watching the MCU-FPGA bus and your own logic over JTAG. It is only built in when you build with `-e`.
+
+### Setup
+
+Complete [OpenOCD Setup](#openocd-setup) and [FcapZ Setup](#fcapz-setup), then fetch the fpgacapZero submodule and install its host tool, so the tool matches the core in the firmware:
+
 ```bash
 cd <this repository directory>
 git submodule update --init
+pip install -e proj/foreign/fpgacapZero
 ```
 
-To inject an ELA core into the firmware, build the firmware with the '-e' command line argument (below) and then program the board as per [program](#program).<br>
+### Build, Program and Connect
+
+Build with `-e`, then program the board as per [Program](#program):
+
 ```bash
 ./build.sh -e
 ```
-Once the board has been programmed, run OpenOCD as per [OpenOCD Setup](#openocd-setup), and then probe the ELA core via fpgacapZ:<br>
+
+On Windows, run `.uild.ps1 -e` instead.
+
+With the analyzer included, the design meets timing at the default 51 MHz system clock. The build does not stop on timing failures, so if you also use `-k`, check the Max Frequency Summary in `build/platforms/gowin/devices/GW1NR-9/C7I6/output/EPM11/impl/pnr/EPM11_tr_content.html`.
+
+With the board plugged in, start OpenOCD from the repository directory and leave it running:
+
+```bash
+openocd -f foreign/openocd/epm11.cfg
+```
+
+In a second terminal, from the repository directory, check the core responds:
+
 ```bash
 fcapz --backend openocd --port 6666 --tap GW1NR-9C.tap probe
 ```
-This should produce the following:
-```
-{
-  "version_major": 0,
-  "version_minor": 4,
-  "core_id": 19521,
-  "sample_width": 8,
-  "depth": 64,
-  "num_channels": 6,
-  "trig_stages": 1,
-  "has_storage_qualification": false,
-  "has_decimation": false,
-  "has_ext_trigger": false,
-  "has_timestamp": false,
-  "timestamp_width": 0,
-  "num_segments": 1,
-  "probe_mux_w": 0,
-  "compare_caps": 197059,
-  "compare_modes": [
-    0,
-    1,
-    6,
-    7,
-    8
-  ],
-  "has_dual_compare": true
-}
-```
-Next, trigger on Channel 3 (index 2), which is an 8-bit counter (see the 'autogen_top_wrapper.sv' that was built).
-```
-fcapz --backend openocd --port 6666 --tap GW1NR-9C.tap capture --pretrigger 8 --posttrigger 16 --trigger-mode value_match --trigger-value 0 --depth 64 --format vcd --out capture.vcd --channel 2
-```
-Open the resulting capture (note the trigger location, and depth) in a waveform viewer, for example, [surfer](https://surfer-project.org/):
-```
-surfer capture.vcd
-```
-![Alt text](img/surfer.png)
 
-See the table below for details on the captured channels. Note that you can manually trigger the ELA via:
+It prints the core's configuration; `sample_width` should be `100` and `depth` should be `1024`.
 
-1. Holding Pushbutton 2.
-2. Running the 'fcapz' command, triggering on Channel 4 as '0'.
-3. Releasing Pushbutton 2.
+### What is Captured
 
-| Build Switches | fcapZ CH1 | fcapZ CH2 | fcapZ CH3 | fcapZ CH4 | fcapZ CH5 | fcapZ CH6|
-| :------:|:------:|:------:|:------:|:------:|:------:|:------:|
-| ./build.sh -e |FPGA Pin 1-8 State|FPGA Pin 9-16 State|8-bit Counter|Button 2 State|0|0|
+Each sample holds the signals below, laid out in `proj/common/systemverilog/ela_probe.sv`. Their names are in `ela_probe.prob` beside it, which you pass to `fcapz` to get named signals.
 
+| Signal | Bits | Meaning |
+| :--- | :---: | :--- |
+| `done` | 0 | High for one clock as a bus transaction completes |
+| `write` | 1 | 1 for a write, 0 for a read |
+| `pin_clk` | 2 | The bus clock wire |
+| `pin_wr` | 3 | The bus frame wire, high for the whole of each transaction |
+| `pin_data` | 19:4 | The 16 bus data wires |
+| `addr` | 51:20 | Address of the transaction |
+| `data` | 83:52 | Value written, or value read back |
+| `user_probe` | 99:84 | The `probe` output of `user.sv` |
+
+`write`, `addr` and `data` describe a transaction in the sample where `done` is 1.
+
+### Capture Transactions
+
+This stores one sample per completed transaction, starting with the first one after the command runs, and finishes after 16:
+
+```
+fcapz --backend openocd --port 6666 --tap GW1NR-9C.tap capture --probe-file proj/common/systemverilog/ela_probe.prob --stor-qual-mode 6 --stor-qual-mask 0x1 --trigger-mode value_match --trigger-value 1 --trigger-mask 0x1 --pretrigger 0 --posttrigger 15 --timeout 60 --format vcd --out transactions.vcd
+```
+
+Run your MCU program within the 60 second timeout, then open the capture in a waveform viewer, for example [surfer](https://surfer-project.org/):
+
+```
+surfer transactions.vcd
+```
+
+`--stor-qual-mode 6 --stor-qual-mask 0x1` stores a sample only when `done` rises. Because samples are stored selectively, the time axis counts samples rather than real time.
+
+### Capture the Bus Wires
+
+This stores a sample each time `pin_clk` or `done` changes, around the first transaction:
+
+```
+fcapz --backend openocd --port 6666 --tap GW1NR-9C.tap capture --probe-file proj/common/systemverilog/ela_probe.prob --stor-qual-mode 8 --stor-qual-mask 0x5 --trigger-mode value_match --trigger-value 1 --trigger-mask 0x1 --pretrigger 11 --posttrigger 4 --timeout 60 --format vcd --out wires.vcd
+```
+
+For a write, the 11 samples before the trigger show each word the MCU sends on `pin_data` as `pin_clk` rises: `a501` (write), address low, address high, data low, data high, then a check word. After the trigger, the FPGA answers `5a01` (ready).
+
+To capture a read instead, trigger on `done` = 1 with `write` = 0 by using `--trigger-mask 0x3`, with `--pretrigger 7 --posttrigger 9`. `a500` (read), address low, address high and a check word come before the trigger, and `5a01`, data low, data high and a check word come back after it.
+
+`pin_wr` is high for the whole of each transaction. The FPGA answers `5a00` (busy) until memory responds, which pushes later samples back, and `5aee` if an earlier request is still waiting.
+
+### Notes
+
+- `--stor-qual-mode` takes a compare code: `6` stores on a rising edge and `8` on any change. The fcapz help text describing `1` as "store when match" does not match this core; `1` stores samples that do *not* match.
+- A capture finishes once `--posttrigger` more samples have been stored. If it times out, send more bus traffic or use a smaller number.
+- `--pretrigger` samples from before the capture started are left over from earlier activity.
+- `--trigger-value` must be a decimal number.
+- Signals you trigger or qualify on must be in bits 0 to 31.
+
+### Adding Your Own Signals
+
+The quickest way is to drive `probe` in `user.sv`; it appears as `user_probe`.
+
+To capture more, add a port to `ela_probe.sv`, add it to the `probe` vector, and add a matching entry to `ela_probe.prob` with the same width and lowest bit. Update `PROBE_W` and `sample_width` to the new total. The analyzer uses 6 of the FPGA's 26 BSRAM blocks, which leaves room for up to about 180 bits in total at the default depth.
 
 <br>
 

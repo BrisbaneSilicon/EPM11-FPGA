@@ -93,6 +93,8 @@ if {$embedded_logic_analyzer == "true"} {
     foreach src $fpgacapzero_verilog_files {
         add_file -type verilog $src
     }
+
+    add_file -type verilog $repo_root_dir/$proj_folder/$common_folder/systemverilog/ela_probe.sv
 }
 
 add_file "../../${constraints_folder}/location.cst"
