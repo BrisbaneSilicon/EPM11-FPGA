@@ -10,8 +10,6 @@ module cpu_bus #(
 
 
     // -------------- Host wires --------------
-    // NOTE: 'cpu_wr_async' frames each transaction,
-    // high for all of it and low between them...
 
     inout   wire    [15:0]  cpu_data_async,
     input   logic           cpu_clk_async,
@@ -37,56 +35,12 @@ module cpu_bus #(
     input   logic   [31:0]  m_rdata,
     output  logic           m_valid,
     input   logic           m_ready
-        // NOTE: 'm_ready' may take as long as it
-        // needs, the RPI keeps polling for it...
+        // REVISIT: this module currently constrains
+        // 'm_ready', such that it must be asserted
+        // within a certain interval after 'm_valid'
+        // asserts (depending upon read/write) otherwise
+        // the transaction will fail...
 );
-
-
-    // ----------------------------------------------
-    //  Protocol
-    // ----------------------------------------------
-    //
-    //  'wr' is high for a whole transaction and low between them. Low
-    //  always brings this module back to beat 0 with the lines released,
-    //  so a bad transaction can never upset the next one.
-    //
-    //  The RPI drives one word per rising edge of its clock:
-    //
-    //      write:  CMD_WRITE  addr[15:0]  addr[31:16]  data[15:0]  data[31:16]  CHECK
-    //      read:   CMD_READ   addr[15:0]  addr[31:16]  CHECK
-    //
-    //  CHECK is the CRC of the words before it. Only a frame with a good
-    //  command and a good CHECK is acted on or answered. Anything else,
-    //  including a frame with too many or too few beats, gets no answer.
-    //
-    //  The RPI then releases the lines and keeps clocking, and we drive one
-    //  word per falling edge: BUSY until downstream has taken the request,
-    //  then READY. A read carries on with data[15:0], data[31:16] and the
-    //  CHECK of those two. ERROR means a good frame was refused, because an
-    //  earlier request is still waiting on downstream.
-
-    localparam logic [15:0] cCMD_WRITE      = 16'hA501;
-    localparam logic [15:0] cCMD_READ       = 16'hA500;
-
-    localparam logic [15:0] cSTATUS_BUSY    = 16'h5A00;
-    localparam logic [15:0] cSTATUS_READY   = 16'h5A01;
-    localparam logic [15:0] cSTATUS_ERROR   = 16'h5AEE;
-
-    localparam logic [15:0] cCRC_INIT       = 16'hFFFF;
-
-
-    // NOTE: CRC-16/CCITT, one 16-bit word at a time
-    function automatic logic [15:0] crc16(input logic [15:0] crc, input logic [15:0] word);
-        logic [15:0] c;
-
-        c = crc ^ word;
-
-        for (int i = 0; i < 16; i++) begin
-            c = c[15] ? ((c << 1) ^ 16'h1021) : (c << 1);
-        end
-
-        return c;
-    endfunction
 
 
     // ----------------------------------------------
@@ -100,26 +54,14 @@ module cpu_bus #(
     logic           i_cpu_clk_edge;
 
     logic           i_cpu_wr;
-    logic           i_frame;
+    logic           i_cpu_wr_d1;
+    logic           i_cpu_wr_edge;
 
     logic   [SYNC_STAGES-1:0] [15:0]    i_cpu_data_pipe;
     logic   [15:0]  i_cpu_data;
 
-    logic   [2:0]   i_transaction;
-    logic           i_last_beat;
-    logic           i_is_write;
-    logic           i_cmd_ok;
-    logic   [15:0]  i_crc;
-    logic   [31:0]  i_req_addr;
-    logic   [31:0]  i_req_wdata;
-
-    logic           i_request_done;
-    logic           i_answering;
-    logic           i_refused;
-    logic           i_requested;
-    logic           i_ready;
-    logic   [1:0]   i_words_out;
-    logic   [31:0]  i_rdata;
+    logic   [1:0]   i_transaction;
+    logic           i_wr_transaction;
 
     logic   [15:0]  i_bus_out;
     logic           i_bus_drive;
@@ -159,9 +101,11 @@ module cpu_bus #(
     always @(posedge clk) begin
         // defaults
         i_cpu_clk_d1    <= i_cpu_clk;
+        i_cpu_wr_d1     <= i_cpu_wr;
 
         if (srst == 1'b1) begin
             i_cpu_clk_d1 <= 1'b0;
+            i_cpu_wr_d1  <= 1'b0;
         end
     end
 
@@ -188,128 +132,114 @@ module cpu_bus #(
     assign i_cpu_clk_fall = ~i_cpu_clk & i_cpu_clk_d1;
     assign i_cpu_clk_edge = i_cpu_clk ^ i_cpu_clk_d1;
 
+    assign i_cpu_wr_edge  = i_cpu_wr ^ i_cpu_wr_d1;
+
 
 
     // NOTE: burst
     // sequencer
     // --------------
 
-    assign i_frame     = i_cpu_wr;
-    assign i_last_beat = (i_transaction == (i_is_write ? 3'd5 : 3'd3));
+    assign i_wr_transaction = i_cpu_wr;
 
     always @(posedge clk) begin
+        if (m_valid == 1'b0) begin
+            // NOTE: not currently transacting with downstream...
 
-        // NOTE: the request, one word per rising
-        // edge of the RPI's clock...
+            // NOTE: Each beat corresponds to one of 4 burst stages.
+            // the first 2 always receives an address (always read)
+            // then the last are dependent on the wr signal for writing or reading
+            // In that case the first 2 cases will (when used) always be true.
+            if (i_cpu_clk_rise == 1'b1) begin
+                i_transaction <= i_transaction + 1;
 
-        if (i_cpu_clk_rise == 1'b1 && i_request_done == 1'b0) begin
-            i_transaction <= i_transaction + 1;
-            i_crc         <= crc16(i_crc, i_cpu_data);
-
-            case (i_transaction)
-                3'd0:                                       begin
-                    i_is_write          <= (i_cpu_data == cCMD_WRITE);
-                    i_cmd_ok            <= (i_cpu_data == cCMD_WRITE) ||
-                                           (i_cpu_data == cCMD_READ);
-                end
-
-                3'd1:   i_req_addr[15:0]    <= i_cpu_data;
-                3'd2:   i_req_addr[31:16]   <= i_cpu_data;
-                3'd3:   i_req_wdata[15:0]   <= i_cpu_data;
-                3'd4:   i_req_wdata[31:16]  <= i_cpu_data;
-
-                default: ;
-            endcase
-
-            if (i_last_beat == 1'b1) begin
-                i_request_done <= 1'b1;
-
-                if (i_cmd_ok == 1'b1 && i_cpu_data == i_crc) begin
-                    i_answering <= 1'b1;
-
-                    if (m_valid == 1'b0) begin
-                        m_addr      <= i_req_addr;
-                        m_wdata     <= i_req_wdata;
-                        m_wstrb     <= i_is_write;
-                        m_valid     <= 1'b1;
-                        i_requested <= 1'b1;
+                case (i_transaction)
+                    2'b00:                                      begin
+                        m_wstrb         <= i_wr_transaction;
+                        m_addr[15:0]    <= i_cpu_data;
                     end
-                    else begin
-                        i_refused   <= 1'b1;
+
+                    2'b01:                                      begin
+                        m_addr[31:16] <= i_cpu_data;
+
+                        if (i_wr_transaction == 1'b0) begin
+                            m_valid <= 1'b1;
+                        end
                     end
-                end
-            end
-        end
 
-        // NOTE: the answer, one word per falling edge.
-        // The RPI lets go of the lines before this edge,
-        // so both sides never drive at once...
+                    2'b10:                                      begin
+                        m_wdata[15:0] <= i_cpu_data;
+                    end
 
-        if (i_cpu_clk_fall == 1'b1 && i_answering == 1'b1) begin
-            i_bus_drive <= 1'b1;
+                    default:                                    begin
+                        m_wdata[31:16] <= i_cpu_data;
 
-            if (i_refused == 1'b1) begin
-                i_bus_out <= cSTATUS_ERROR;
-            end
-            else if (i_ready == 1'b0) begin
-                i_bus_out <= cSTATUS_BUSY;
-            end
-            else if (i_is_write == 1'b1) begin
-                i_bus_out <= cSTATUS_READY;
-            end
-            else begin
-                case (i_words_out)
-                    2'd0:       i_bus_out <= cSTATUS_READY;
-                    2'd1:       i_bus_out <= i_rdata[15:0];
-                    2'd2:       i_bus_out <= i_rdata[31:16];
-                    default:    i_bus_out <= crc16(crc16(cCRC_INIT, i_rdata[15:0]), i_rdata[31:16]);
+                        if (i_wr_transaction == 1'b1) begin
+                            m_valid <= 1'b1;
+                        end
+                    end
                 endcase
+            end
 
-                if (i_words_out != 2'd3) begin
-                    i_words_out <= i_words_out + 1;
+            // This is a really important part. On the falling edge,
+            // we arm the drivers (if the RPI is reading), this gives the
+            // RPI time to stop driving the wires, and time for the FPGA
+            // to fetch the data then drive the wires.
+
+            if (i_cpu_clk_fall == 1'b1) begin
+                i_bus_drive <= 1'b0;
+                    // NOTE: default, stay off the bus
+
+                if (i_wr_transaction == 1'b0) begin
+                    case (i_transaction)
+                        2'b10:                                  begin
+                            i_bus_out   <= m_rdata[15:0];
+                            i_bus_drive <= 1'b1;
+                        end
+
+                        2'b11:                                  begin
+                            i_bus_out   <= m_rdata[31:16];
+                                // REVISIT: shift preferred as opposed to demux,
+                                // i.e. 'i_bus_out' to be 32 bits, the lower 16
+                                // of which are taped for cpu_data_async, and
+                                // 'i_bus_out' is shifted right on this final
+                                // transaction...
+
+                            i_bus_drive <= 1'b1;
+                        end
+
+                        default: ;
+                    endcase
                 end
             end
         end
+        else begin
+            if (m_ready == 1'b1) begin
+                // NOTE: handshake completes transaction
+                // with downstream...
 
-        // NOTE: the handshake with downstream. 'm_valid'
-        // holds until 'm_ready', whatever the RPI does...
-
-        if (m_valid == 1'b1 && m_ready == 1'b1) begin
-            m_valid <= 1'b0;
-
-            if (i_requested == 1'b1) begin
-                i_ready <= 1'b1;
-                i_rdata <= m_rdata;
+                m_valid <= 1'b0;
             end
         end
 
-        // NOTE: frame low, so back to beat 0 and off
-        // the bus. A request already out on 'm_valid'
-        // is left to finish...
+        if (i_cpu_wr_edge == 1'b1) begin
+            // NOTE: we can safely reset the transaction
+            // count on any edge of the 'cpu wr' strobe,
+            // as it will always signal the beginning of
+            // a transaction.
 
-        if (i_frame == 1'b0) begin
-            i_transaction   <= 3'd0;
-            i_crc           <= cCRC_INIT;
-            i_cmd_ok        <= 1'b0;
-            i_request_done  <= 1'b0;
-            i_answering     <= 1'b0;
-            i_refused       <= 1'b0;
-            i_requested     <= 1'b0;
-            i_ready         <= 1'b0;
-            i_words_out     <= 2'd0;
+            i_transaction   <= 2'b00;
             i_bus_drive     <= 1'b0;
         end
 
         // NOTE: handle reset here in order to
         // reduce control sets...
         if (srst == 1'b1) begin
-            m_valid         <= 1'b0;
+            m_valid             <= 1'b0;
 
-            i_transaction   <= 3'd0;
-            i_request_done  <= 1'b0;
-            i_answering     <= 1'b0;
+            i_transaction       <= 2'b00;
 
-            i_bus_drive     <= 1'b0;
+            i_bus_drive         <= 1'b0;
         end
     end
 

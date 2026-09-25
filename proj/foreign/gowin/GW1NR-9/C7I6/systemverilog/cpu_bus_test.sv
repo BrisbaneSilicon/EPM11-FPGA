@@ -182,12 +182,6 @@ module cpu_bus_test
                 end
             end
         end
-
-        // NOTE: handle reset here in order to
-        // reduce control sets...
-        if (srst == 1'b1) begin
-            s_rddata <= 32'h0000_0000;
-        end
     end
 
 

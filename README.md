@@ -403,7 +403,7 @@ Each sample holds the signals below, laid out in `proj/common/systemverilog/ela_
 | `done` | 0 | High for one clock as a bus transaction completes |
 | `write` | 1 | 1 for a write, 0 for a read |
 | `pin_clk` | 2 | The bus clock wire |
-| `pin_wr` | 3 | The bus frame wire, high for the whole of each transaction |
+| `pin_wr` | 3 | The bus write wire |
 | `pin_data` | 19:4 | The 16 bus data wires |
 | `addr` | 51:20 | Address of the transaction |
 | `data` | 83:52 | Value written, or value read back |
@@ -432,14 +432,12 @@ surfer transactions.vcd
 This stores a sample each time `pin_clk` or `done` changes, around the first transaction:
 
 ```
-fcapz --backend openocd --port 6666 --tap GW1NR-9C.tap capture --probe-file proj/common/systemverilog/ela_probe.prob --stor-qual-mode 8 --stor-qual-mask 0x5 --trigger-mode value_match --trigger-value 1 --trigger-mask 0x1 --pretrigger 11 --posttrigger 4 --timeout 60 --format vcd --out wires.vcd
+fcapz --backend openocd --port 6666 --tap GW1NR-9C.tap capture --probe-file proj/common/systemverilog/ela_probe.prob --stor-qual-mode 8 --stor-qual-mask 0x5 --trigger-mode value_match --trigger-value 1 --trigger-mask 0x1 --pretrigger 7 --posttrigger 2 --timeout 60 --format vcd --out wires.vcd
 ```
 
-For a write, the 11 samples before the trigger show each word the MCU sends on `pin_data` as `pin_clk` rises: `a501` (write), address low, address high, data low, data high, then a check word. After the trigger, the FPGA answers `5a01` (ready).
+For a write, the 7 samples before the trigger show each beat on `pin_data` as `pin_clk` rises: address low, address high, data low, data high.
 
-To capture a read instead, trigger on `done` = 1 with `write` = 0 by using `--trigger-mask 0x3`, with `--pretrigger 7 --posttrigger 9`. `a500` (read), address low, address high and a check word come before the trigger, and `5a01`, data low, data high and a check word come back after it.
-
-`pin_wr` is high for the whole of each transaction. The FPGA answers `5a00` (busy) until memory responds, which pushes later samples back, and `5aee` if an earlier request is still waiting.
+To capture a read instead, trigger on `done` = 1 with `write` = 0 by using `--trigger-mask 0x3`, with `--pretrigger 3 --posttrigger 6`. The two address beats come before the trigger, and the two beats the FPGA drives back come after it.
 
 ### Notes
 
