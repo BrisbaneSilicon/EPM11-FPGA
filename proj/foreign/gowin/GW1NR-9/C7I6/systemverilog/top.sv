@@ -76,6 +76,14 @@ module top #(
     input                       cpu_ready,
 
 
+    // -------------- cpu bus, for debug --------------
+
+    output      [15:0]          bus_pin_data,
+    output                      bus_pin_clk,
+    output                      bus_pin_wr,
+    output      [1:0]           bus_beat,
+
+
     // -------------- memory --------------
 
     input       [31:0]          ram_addr,
@@ -83,18 +91,7 @@ module top #(
     input       [3:0]           ram_wstrb,
     output  reg [31:0]          ram_rdata,
     input                       ram_valid,
-    output  reg                 ram_ready,
-
-
-    // -------------- bus monitor --------------
-
-    output      [31:0]          bus_addr,
-    output      [31:0]          bus_data,
-    output                      bus_write,
-    output                      bus_done,
-    output      [15:0]          bus_pin_data,
-    output                      bus_pin_clk,
-    output                      bus_pin_wr
+    output  reg                 ram_ready
 );
 localparam int DQ_WIDTH         = 16;
 localparam int CS_WIDTH         = 2;
@@ -132,13 +129,6 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
 
     reg                     i_cpu_wstrb;
 
-    wire    [31:0]          i_cpu_m_addr;
-    wire    [31:0]          i_cpu_m_wdata;
-    wire    [3:0]           i_cpu_m_wstrb;
-    wire    [31:0]          i_cpu_m_rdata;
-    wire                    i_cpu_m_valid;
-    wire                    i_cpu_m_ready;
-
 
 
     // ----------------------------------------------
@@ -164,69 +154,18 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
         .cpu_data_sync  (bus_pin_data),
         .cpu_clk_sync   (bus_pin_clk),
         .cpu_wr_sync    (bus_pin_wr),
+        .cpu_beat       (bus_beat),
 
-        .m_addr         (i_cpu_m_addr),
-        .m_wdata        (i_cpu_m_wdata),
+        .m_addr         (cpu_addr),
+        .m_wdata        (cpu_wdata),
         .m_wstrb        (i_cpu_wstrb),
-        .m_rdata        (i_cpu_m_rdata),
-        .m_valid        (i_cpu_m_valid),
-        .m_ready        (i_cpu_m_ready)
+        .m_rdata        (cpu_rdata),
+        .m_valid        (cpu_valid),
+        .m_ready        (cpu_ready)
     );
 
-    assign i_cpu_m_wstrb = { i_cpu_wstrb, i_cpu_wstrb,
-                                i_cpu_wstrb,  i_cpu_wstrb };
-
-
-    // -------------------------------------------------
-    // CPU BUS -> MEMORY:
-    //
-    // The address the RPI sends is an address in the FPGA
-    // memory, so 'ram_memory_Inst' owns the whole space
-    // and answers every transaction. No decode.
-    //
-    // NOTE: 'ram_memory' only decodes address bits [21:2],
-    // so the space aliases every 4 MB - the map inside it
-    // is 32 kB of SRAM at addr[14:0], HyperRAM above that,
-    // and anything higher wraps back into that window.
-    //
-    // -------------------------------------------------
-
-    assign i_mbus_sram_addr[0]  = i_cpu_m_addr;
-    assign i_mbus_sram_wdata[0] = i_cpu_m_wdata;
-    assign i_mbus_sram_wstrb[0] = i_cpu_m_wstrb;
-    assign i_mbus_sram_valid[0] = i_cpu_m_valid;
-
-    assign i_cpu_m_rdata        = i_mbus_sram_rdata[0];
-    assign i_cpu_m_ready        = i_mbus_sram_ready[0];
-
-
-    // NOTE: the same request is still presented to the
-    // fabric, so user.sv - and 'cpu_bus_test' in a '-t'
-    // build - can watch the traffic and latch it. The
-    // memory is what answers, so the 'cpu_rdata' and
-    // 'cpu_ready' coming back from the fabric are
-    // deliberately not used here...
-
-    assign cpu_addr             = i_cpu_m_addr;
-    assign cpu_wdata            = i_cpu_m_wdata;
-    assign cpu_wstrb            = i_cpu_m_wstrb;
-    assign cpu_valid            = i_cpu_m_valid;
-
-
-    // -------------------------------------------------
-    // BUS MONITOR:
-    //
-    // A read-only copy of every transaction, for debug.
-    // 'bus_data' is the value written or read back, and
-    // 'bus_done' is high for one clk as each one completes.
-    // 'bus_pin_*' are the bus pins as 'cpu_bus' samples them.
-    //
-    // -------------------------------------------------
-
-    assign bus_addr             = i_cpu_m_addr;
-    assign bus_data             = i_cpu_wstrb ? i_cpu_m_wdata : i_cpu_m_rdata;
-    assign bus_write            = i_cpu_wstrb;
-    assign bus_done             = i_cpu_m_valid & i_cpu_m_ready;
+    assign cpu_wstrb = { i_cpu_wstrb, i_cpu_wstrb,
+                            i_cpu_wstrb,  i_cpu_wstrb };
 
 
     
@@ -409,21 +348,12 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
 
     // -------------- memory fabric assignments --------------
 
-    // NOTE: the memory is now owned by the CPU bus (see
-    // 'CPU ADDRESS DECODE' above), which drives
-    // 'i_mbus_sram_*' directly. That leaves user.sv's own
-    // memory master with nowhere to go, so it is tied off
-    // here rather than left floating - user.sv reads back
-    // zero and never sees 'ready'.
-    //
-    // To give user.sv the memory back alongside the CPU,
-    // build 'ram_memory' with IF(2) and put user.sv on
-    // interface 1: the arbiter and its round-robin
-    // priority scheme are already in that module, and
-    // note that IF(2) also splits the SRAM into two 16 kB
-    // halves rather than one 32 kB block.
-
-    assign ram_rdata            = 32'h0000_0000;
-    assign ram_ready            = 1'b0;
+    // SRAM/HyperRAM — flatten [0:0][31:0] to [31:0]
+    assign i_mbus_sram_addr[0]  = ram_addr;
+    assign i_mbus_sram_wdata[0] = ram_wdata;
+    assign i_mbus_sram_wstrb[0] = ram_wstrb;
+    assign ram_rdata            = i_mbus_sram_rdata[0];
+    assign i_mbus_sram_valid[0] = ram_valid;
+    assign ram_ready            = i_mbus_sram_ready[0];
 
 endmodule

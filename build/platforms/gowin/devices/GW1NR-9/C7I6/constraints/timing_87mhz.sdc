@@ -21,8 +21,8 @@ set_false_path -from [get_clocks {clk_87Mhz_p}]     -to [get_clocks {clk_87Mhz}]
 set_false_path -from [get_clocks {clk_27Mhz}]       -to [get_clocks {clk_tck}]
 set_false_path -from [get_clocks {clk_tck}]         -to [get_clocks {clk_27Mhz}]
 
-set_false_path -from [get_clocks {clk_81Mhz}]       -to [get_clocks {clk_tck}]
-set_false_path -from [get_clocks {clk_tck}]         -to [get_clocks {clk_81Mhz}]
+set_false_path -from [get_clocks {clk_87Mhz}]       -to [get_clocks {clk_tck}]
+set_false_path -from [get_clocks {clk_tck}]         -to [get_clocks {clk_87Mhz}]
 
 
 # NOTE: RPI-FPGA bus pins, to the first register each one feeds

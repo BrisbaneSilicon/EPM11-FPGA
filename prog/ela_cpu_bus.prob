@@ -1,0 +1,13 @@
+{
+  "format": "fpgacapzero.probes.v1",
+  "core": "ela",
+  "sample_width": 24,
+  "probes": [
+    {"name": "clk",   "width": 1,  "lsb": 0},
+    {"name": "wr",    "width": 1,  "lsb": 1},
+    {"name": "valid", "width": 1,  "lsb": 2},
+    {"name": "beat",  "width": 2,  "lsb": 3},
+    {"name": "op",    "width": 3,  "lsb": 5},
+    {"name": "data",  "width": 16, "lsb": 8}
+  ]
+}

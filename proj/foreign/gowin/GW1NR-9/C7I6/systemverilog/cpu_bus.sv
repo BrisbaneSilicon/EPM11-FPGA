@@ -16,12 +16,14 @@ module cpu_bus #(
     input   logic           cpu_wr_async,
 
 
-    // -------------- Host wires, synchronised --------------
-    // NOTE: what this module acts on, for debug...
+    // -------------- Host wires, as seen here --------------
+    // NOTE: the synchronised copies this module
+    // acts on, and its beat count, for debug...
 
     output  logic   [15:0]  cpu_data_sync,
     output  logic           cpu_clk_sync,
     output  logic           cpu_wr_sync,
+    output  logic   [1:0]   cpu_beat,
 
 
     // -------- fabric master --------------------
@@ -127,6 +129,7 @@ module cpu_bus #(
     assign cpu_data_sync  = i_cpu_data;
     assign cpu_clk_sync   = i_cpu_clk;
     assign cpu_wr_sync    = i_cpu_wr;
+    assign cpu_beat       = i_transaction;
 
     assign i_cpu_clk_rise = i_cpu_clk & ~i_cpu_clk_d1;
     assign i_cpu_clk_fall = ~i_cpu_clk & i_cpu_clk_d1;

@@ -65,6 +65,8 @@ input               cpu_valid,
 output  reg         cpu_ready,
 ```
 
+By default, user.sv passes each request on to the FPGA memory (internal SRAM for the first 32 KB, HyperRAM above that), so a later `fpga.read(0x4)` returns `0xFF`.
+
 <br>
 
 ## Getting Started
@@ -249,8 +251,10 @@ The most commonly used are listed below.
 | -y, --list_supported_system_clock_frequencies | List the supported system clock frequencies and exit. |
 | -k, --clock_frequency FREQUENCY_MHZ | Use a frequency of FREQUENCY_MHZ for the system clock (default 51 MHz). |
 | -e, --embedded_logic_analyzer| Include an Embedded Logic Analyzer (fpgacapZero) in the bitstream. |
-| -t, --cpu_bus_test | Include a readback register set for the CPU bus. Required for EPM11-MCU 'cpu_bus_test.py' test program. |
+| -t, --cpu_bus_test | Add the CPU bus signaling to the Embedded Logic Analyzer (use with -e). |
 | -a, --clean_all_platforms | Perform cleanup of the entire build and exit. |
+
+If you change the clock with `-k`, set the MCU pulse delay to match, see [Pulse Delay](https://github.com/BrisbaneSilicon/EPM11-MCU#pulse-delay).
 
 ### Windows
 
@@ -356,102 +360,98 @@ For more detailed windows troubleshooting steps, see TROUBLESHOOTING.txt.
 
 ## Embedded Logic Analyzer
 
-The firmware can include an Embedded Logic Analyzer, an [fpgacapZero](https://github.com/lcapossio/fpgacapZero) core, for watching the MCU-FPGA bus and your own logic over JTAG. It is only built in when you build with `-e`.
-
-### Setup
-
-Complete [OpenOCD Setup](#openocd-setup) and [FcapZ Setup](#fcapz-setup), then fetch the fpgacapZero submodule and install its host tool, so the tool matches the core in the firmware:
-
+This project can be built to include an Embedded Logic Analyzer to showcase injecting and probing an fpgacapZero ELA core. Ensure you have completed [OpenOCD Setup](#openocd-setup) and [FcapZ Setup](#fcapz-setup) and pulled the 'fpgaCapZero' foreign git submodule (command below) prior to performing the steps below.
 ```bash
 cd <this repository directory>
 git submodule update --init
-pip install -e proj/foreign/fpgacapZero
 ```
 
-### Build, Program and Connect
-
-Build with `-e`, then program the board as per [Program](#program):
-
+To inject an ELA core into the firmware, build the firmware with the '-e' command line argument (below) and then program the board as per [program](#program).<br>
 ```bash
 ./build.sh -e
 ```
-
-On Windows, run `.uild.ps1 -e` instead.
-
-With the analyzer included, the design meets timing at the default 51 MHz system clock. The build does not stop on timing failures, so if you also use `-k`, check the Max Frequency Summary in `build/platforms/gowin/devices/GW1NR-9/C7I6/output/EPM11/impl/pnr/EPM11_tr_content.html`.
-
-With the board plugged in, start OpenOCD from the repository directory and leave it running:
-
-```bash
-openocd -f foreign/openocd/epm11.cfg
-```
-
-In a second terminal, from the repository directory, check the core responds:
-
+On Windows, run `.\build.ps1 -e` from the 'build' directory instead, as per [Build](#build).<br>
+Once the board has been programmed, run OpenOCD as per [OpenOCD Setup](#openocd-setup), and then probe the ELA core via fpgacapZ:<br>
 ```bash
 fcapz --backend openocd --port 6666 --tap GW1NR-9C.tap probe
 ```
+This should produce the following:
+```
+{
+  "version_major": 0,
+  "version_minor": 4,
+  "core_id": 19521,
+  "sample_width": 24,
+  "depth": 1024,
+  "num_channels": 6,
+  "trig_stages": 1,
+  "has_storage_qualification": true,
+  "has_decimation": false,
+  "has_ext_trigger": false,
+  "has_timestamp": false,
+  "timestamp_width": 0,
+  "num_segments": 1,
+  "probe_mux_w": 0,
+  "compare_caps": 197059,
+  "compare_modes": [
+    0,
+    1,
+    6,
+    7,
+    8
+  ],
+  "has_dual_compare": true
+}
+```
+Next, trigger on Channel 3 (index 2), which is an 8-bit counter (see the 'autogen_top_wrapper.sv' that was built).
+```
+fcapz --backend openocd --port 6666 --tap GW1NR-9C.tap capture --pretrigger 8 --posttrigger 16 --trigger-mode value_match --trigger-value 0 --sample-width 24 --format vcd --out capture.vcd --channel 2
+```
+Open the resulting capture (note the trigger location, and depth) in a waveform viewer, for example, [surfer](https://surfer-project.org/):
+```
+surfer capture.vcd
+```
+![Alt text](img/surfer.png)
 
-It prints the core's configuration; `sample_width` should be `100` and `depth` should be `1024`.
+See the table below for details on the captured channels. Note that you can manually trigger the ELA via:
 
-### What is Captured
+1. Holding Pushbutton 2.
+2. Running the 'fcapz' command, triggering on Channel 4 as '0'.
+3. Releasing Pushbutton 2.
 
-Each sample holds the signals below, laid out in `proj/common/systemverilog/ela_probe.sv`. Their names are in `ela_probe.prob` beside it, which you pass to `fcapz` to get named signals.
+| Build Switches | fcapZ CH1 | fcapZ CH2 | fcapZ CH3 | fcapZ CH4 | fcapZ CH5 | fcapZ CH6|
+| :------:|:------:|:------:|:------:|:------:|:------:|:------:|
+| ./build.sh -e |FPGA Pin 1-16 State|FPGA Pin 9-16 State|8-bit Counter|Button 2 State|0|CPU Bus|
+
+Each channel is 24 bits wide, so pass `--sample-width 24` to any capture that doesn't use a probe file.
+
+### CPU Bus Channel
+
+Channel 6 (index 5) shows the RPI-FPGA bus as the FPGA sees it. Pass `--probe-file prog/ela_cpu_bus.prob` to get its signals by name:
 
 | Signal | Bits | Meaning |
 | :--- | :---: | :--- |
-| `done` | 0 | High for one clock as a bus transaction completes |
-| `write` | 1 | 1 for a write, 0 for a read |
-| `pin_clk` | 2 | The bus clock wire |
-| `pin_wr` | 3 | The bus write wire |
-| `pin_data` | 19:4 | The 16 bus data wires |
-| `addr` | 51:20 | Address of the transaction |
-| `data` | 83:52 | Value written, or value read back |
-| `user_probe` | 99:84 | The `probe` output of `user.sv` |
+| `clk` | 0 | The bus clock wire |
+| `wr` | 1 | The bus write wire, high for a write |
+| `valid` | 2 | High while a request is waiting on memory |
+| `beat` | 4:3 | Which of the 4 beats the FPGA is on |
+| `op` | 7:5 | Write number: 0 after reset, then 1 to 4 on each write, repeating |
+| `data` | 23:8 | The 16 data wires |
 
-`write`, `addr` and `data` describe a transaction in the sample where `done` is 1.
-
-### Capture Transactions
-
-This stores one sample per completed transaction, starting with the first one after the command runs, and finishes after 16:
-
+To capture a group of four writes, each followed by a read, press Pushbutton 1 (this resets `op` and any earlier capture settings), then run:
 ```
-fcapz --backend openocd --port 6666 --tap GW1NR-9C.tap capture --probe-file proj/common/systemverilog/ela_probe.prob --stor-qual-mode 6 --stor-qual-mask 0x1 --trigger-mode value_match --trigger-value 1 --trigger-mask 0x1 --pretrigger 0 --posttrigger 15 --timeout 60 --format vcd --out transactions.vcd
+fcapz --backend openocd --port 6666 --tap GW1NR-9C.tap capture --channel 5 --probe-file prog/ela_cpu_bus.prob --stor-qual-mode 8 --stor-qual-mask 0xFF --trigger-mode value_match --trigger-value 32 --trigger-mask 0xE0 --pretrigger 2 --posttrigger 114 --timeout 60 --format vcd --out bus.vcd
 ```
+Within the 60 second timeout, perform the four `fpga.write` / `fpga.read` pairs on the MCU. A sample is stored each time `clk`, `wr`, `valid`, `beat` or `op` changes, so the time axis counts changes rather than real time, and the capture ends with the fourth read.
 
-Run your MCU program within the 60 second timeout, then open the capture in a waveform viewer, for example [surfer](https://surfer-project.org/):
-
+To see how long a read takes against the bus clock, press Pushbutton 1, then capture every clock around the first read of an address from `0x00100000` to `0x0010FFFF`:
 ```
-surfer transactions.vcd
+fcapz --backend openocd --port 6666 --tap GW1NR-9C.tap capture --channel 5 --probe-file prog/ela_cpu_bus.prob --trigger-mode value_match --trigger-value 4100 --trigger-mask 0xFFFF06 --pretrigger 4 --posttrigger 300 --timeout 60 --format vcd --out read.vcd
 ```
+`valid` rises when the read reaches memory and falls when memory answers. It must fall before `clk` does, otherwise the RPI reads the lower 16 bits as 0. Note that `--trigger-value` must be a decimal number.
 
-`--stor-qual-mode 6 --stor-qual-mask 0x1` stores a sample only when `done` rises. Because samples are stored selectively, the time axis counts samples rather than real time.
+fcapz can only switch storage qualification on, so after a capture that used `--stor-qual-mode`, press Pushbutton 1 before a capture without it, such as the counter capture above.
 
-### Capture the Bus Wires
-
-This stores a sample each time `pin_clk` or `done` changes, around the first transaction:
-
-```
-fcapz --backend openocd --port 6666 --tap GW1NR-9C.tap capture --probe-file proj/common/systemverilog/ela_probe.prob --stor-qual-mode 8 --stor-qual-mask 0x5 --trigger-mode value_match --trigger-value 1 --trigger-mask 0x1 --pretrigger 7 --posttrigger 2 --timeout 60 --format vcd --out wires.vcd
-```
-
-For a write, the 7 samples before the trigger show each beat on `pin_data` as `pin_clk` rises: address low, address high, data low, data high.
-
-To capture a read instead, trigger on `done` = 1 with `write` = 0 by using `--trigger-mask 0x3`, with `--pretrigger 3 --posttrigger 6`. The two address beats come before the trigger, and the two beats the FPGA drives back come after it.
-
-### Notes
-
-- `--stor-qual-mode` takes a compare code: `6` stores on a rising edge and `8` on any change. The fcapz help text describing `1` as "store when match" does not match this core; `1` stores samples that do *not* match.
-- A capture finishes once `--posttrigger` more samples have been stored. If it times out, send more bus traffic or use a smaller number.
-- `--pretrigger` samples from before the capture started are left over from earlier activity.
-- `--trigger-value` must be a decimal number.
-- Signals you trigger or qualify on must be in bits 0 to 31.
-
-### Adding Your Own Signals
-
-The quickest way is to drive `probe` in `user.sv`; it appears as `user_probe`.
-
-To capture more, add a port to `ela_probe.sv`, add it to the `probe` vector, and add a matching entry to `ela_probe.prob` with the same width and lowest bit. Update `PROBE_W` and `sample_width` to the new total. The analyzer uses 6 of the FPGA's 26 BSRAM blocks, which leaves room for up to about 180 bits in total at the default depth.
 
 <br>
 
