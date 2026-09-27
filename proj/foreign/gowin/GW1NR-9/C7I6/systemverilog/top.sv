@@ -168,7 +168,7 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
                             i_cpu_wstrb,  i_cpu_wstrb };
 
 
-    
+
     // NOTE: HyperRAM
     // ------------------
 
