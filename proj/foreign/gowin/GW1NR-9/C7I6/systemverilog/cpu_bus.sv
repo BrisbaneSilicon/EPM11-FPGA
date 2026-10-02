@@ -16,6 +16,16 @@ module cpu_bus #(
     input   logic           cpu_wr_async,
 
 
+    // -------------- Host wires, as seen here --------------
+    // NOTE: the synchronised copies this module
+    // acts on, and its beat count, for debug...
+
+    output  logic   [15:0]  cpu_data_sync,
+    output  logic           cpu_clk_sync,
+    output  logic           cpu_wr_sync,
+    output  logic   [1:0]   cpu_beat,
+
+
     // -------- fabric master --------------------
     // NOTE: named from OUR point of view, so
     // m_wdata is what we write into the fabric
@@ -48,6 +58,9 @@ module cpu_bus #(
     logic           i_cpu_wr;
     logic           i_cpu_wr_d1;
     logic           i_cpu_wr_edge;
+
+    logic   [SYNC_STAGES-1:0] [15:0]    i_cpu_data_pipe;
+    logic   [15:0]  i_cpu_data;
 
     logic   [1:0]   i_transaction;
     logic           i_wr_transaction;
@@ -98,6 +111,26 @@ module cpu_bus #(
         end
     end
 
+    // NOTE: one register per data pin, fed
+    // straight from the pad so it can be placed
+    // in the IOB, then synchronised as deep as
+    // the clk and wr strobes...
+
+    always @(posedge clk) begin
+        i_cpu_data_pipe[0] <= cpu_data_async;
+
+        for (int i = 1; i < SYNC_STAGES; i++) begin
+            i_cpu_data_pipe[i] <= i_cpu_data_pipe[i-1];
+        end
+    end
+
+    assign i_cpu_data     = i_cpu_data_pipe[SYNC_STAGES-1];
+
+    assign cpu_data_sync  = i_cpu_data;
+    assign cpu_clk_sync   = i_cpu_clk;
+    assign cpu_wr_sync    = i_cpu_wr;
+    assign cpu_beat       = i_transaction;
+
     assign i_cpu_clk_rise = i_cpu_clk & ~i_cpu_clk_d1;
     assign i_cpu_clk_fall = ~i_cpu_clk & i_cpu_clk_d1;
     assign i_cpu_clk_edge = i_cpu_clk ^ i_cpu_clk_d1;
@@ -126,11 +159,11 @@ module cpu_bus #(
                 case (i_transaction)
                     2'b00:                                      begin
                         m_wstrb         <= i_wr_transaction;
-                        m_addr[15:0]    <= cpu_data_async;
+                        m_addr[15:0]    <= i_cpu_data;
                     end
 
                     2'b01:                                      begin
-                        m_addr[31:16] <= cpu_data_async;
+                        m_addr[31:16] <= i_cpu_data;
 
                         if (i_wr_transaction == 1'b0) begin
                             m_valid <= 1'b1;
@@ -138,11 +171,11 @@ module cpu_bus #(
                     end
 
                     2'b10:                                      begin
-                        m_wdata[15:0] <= cpu_data_async;
+                        m_wdata[15:0] <= i_cpu_data;
                     end
 
                     default:                                    begin
-                        m_wdata[31:16] <= cpu_data_async;
+                        m_wdata[31:16] <= i_cpu_data;
 
                         if (i_wr_transaction == 1'b1) begin
                             m_valid <= 1'b1;

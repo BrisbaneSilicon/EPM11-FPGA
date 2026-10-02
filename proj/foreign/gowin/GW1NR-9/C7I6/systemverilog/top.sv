@@ -76,6 +76,14 @@ module top #(
     input                       cpu_ready,
 
 
+    // -------------- cpu bus, for debug --------------
+
+    output      [15:0]          bus_pin_data,
+    output                      bus_pin_clk,
+    output                      bus_pin_wr,
+    output      [1:0]           bus_beat,
+
+
     // -------------- memory --------------
 
     input       [31:0]          ram_addr,
@@ -142,6 +150,11 @@ localparam int CLK_FREQUENCY_HZ = CLK_FREQUENCY_MHZ * 1000000;
         .cpu_data_async (cpu_data_async),
         .cpu_clk_async  (cpu_clk_async),
         .cpu_wr_async   (cpu_wr_async),
+
+        .cpu_data_sync  (bus_pin_data),
+        .cpu_clk_sync   (bus_pin_clk),
+        .cpu_wr_sync    (bus_pin_wr),
+        .cpu_beat       (bus_beat),
 
         .m_addr         (cpu_addr),
         .m_wdata        (cpu_wdata),

@@ -172,6 +172,11 @@ localparam WATCH_COUNT      = 4;
     reg [PROBE_WATCH_W-1:0]     i_probe_watch;
     reg [7:0]                   i_eio_out;
 
+    reg [15:0]                  i_bus_pin_data;
+    reg                         i_bus_pin_clk;
+    reg                         i_bus_pin_wr;
+    reg [1:0]                   i_bus_beat;
+
 
     // ----------------------------------------------
     //  Implementation
@@ -225,6 +230,11 @@ localparam WATCH_COUNT      = 4;
         .cpu_valid                  (i_cpu_valid),
         .cpu_ready                  (i_cpu_ready),
 
+        .bus_pin_data               (i_bus_pin_data),
+        .bus_pin_clk                (i_bus_pin_clk),
+        .bus_pin_wr                 (i_bus_pin_wr),
+        .bus_beat                   (i_bus_beat),
+
             // TODO: streaming interface as well... ?
 
         // -------------- memory --------------
@@ -269,18 +279,13 @@ localparam WATCH_COUNT      = 4;
         .probe              (i_user_probe)
     );
 
-    generate
-        if(!CPU_BUS_TEST) begin
+    assign i_cpu_usr_addr   = i_cpu_addr;
+    assign i_cpu_usr_wdata  = i_cpu_wdata;
+    assign i_cpu_usr_wstrb  = i_cpu_wstrb;
+    assign i_cpu_usr_valid  = i_cpu_valid;
 
-            assign i_cpu_usr_addr   = i_cpu_addr;
-            assign i_cpu_usr_wdata  = i_cpu_wdata;
-            assign i_cpu_usr_wstrb  = i_cpu_wstrb;
-            assign i_cpu_usr_valid  = i_cpu_valid;
-
-            assign i_cpu_rdata      = i_cpu_usr_rdata;
-            assign i_cpu_ready      = i_cpu_usr_ready;
-        end
-    endgenerate
+    assign i_cpu_rdata      = i_cpu_usr_rdata;
+    assign i_cpu_ready      = i_cpu_usr_ready;
 
     // ----------------------------------------------
     //  Bus Test
@@ -300,19 +305,21 @@ localparam WATCH_COUNT      = 4;
                 .s_addr             (i_cpu_addr),
                 .s_wrdata           (i_cpu_wdata),
                 .s_wstrb            (i_cpu_wstrb),
-                .s_rddata           (i_cpu_rdata),
+                .s_rddata           (),
                 .s_valid            (i_cpu_valid),
-                .s_ready            (i_cpu_ready),
+                .s_ready            (),
+                    // NOTE: user.sv answers the bus,
+                    // this module only watches it...
 
-                .dbg_data           (i_bus_dbg_data),
-                .dbg_beat           (i_bus_dbg_beat),
+                .dbg_data           (pad_cpu[15:0]),
+                .dbg_beat           (2'b00),
 
                 .cpu_clk_async      (pad_cpu[16]),
                 .cpu_wr_async       (pad_cpu[17]),
                 .watch_clear_async  (i_eio_out[0]),
 
-                .probe_bus          (probe_bus),
-                .probe_watch        (probe_watch)
+                .probe_bus          (i_probe_bus),
+                .probe_watch        (i_probe_watch)
             );
         end
     endgenerate
@@ -356,18 +363,21 @@ localparam WATCH_COUNT      = 4;
             // Costs no extra BSRAM, since 128 and
             // 144 bits both need 8 blocks, but
             // readback goes from 4 words per sample
-            // to 5...
+            // to 5, and the ELA then misses timing
+            // at 51 MHz...
 
-            localparam ELA_USER_PROBE   = CPU_BUS_TEST;
+            localparam ELA_USER_PROBE   = 0;
 
-            localparam ELA_SAMPLE_WIDTH = PROBE_BUS_W + (ELA_USER_PROBE * 16);
-            localparam ELA_SAMPLE_DEPTH = 64;
-            localparam ELA_CHANNELS     = 1;
+            localparam ELA_SAMPLE_WIDTH = CPU_BUS_TEST ? PROBE_BUS_W + (ELA_USER_PROBE * 16) : 24;
+            localparam ELA_SAMPLE_DEPTH = CPU_BUS_TEST ? 64 : 1024;
+            localparam ELA_CHANNELS     = CPU_BUS_TEST ? 1 : 6;
 
             reg                                         i_sysclk_reset;
 
             reg [1:0]                                   i_buttons;
-            reg [ELA_SAMPLE_WIDTH-1:0]                  i_counter;
+            reg [7:0]                                   i_counter;
+
+            reg [(ELA_SAMPLE_WIDTH*ELA_CHANNELS)-1:0]   i_probe;
 
             always @(posedge i_sysclk) begin
                 if (i_sysclk_resetn == 1'b0) begin
@@ -379,16 +389,59 @@ localparam WATCH_COUNT      = 4;
                 end
             end
 
-            if(!CPU_BUS_TEST) begin
-                assign i_probe = { 7'b0000000, i_buttons[1], i_counter, i_user_probe};
-            end
-
-
             // NOTE: built at full width, then
             // sliced. With ELA_USER_PROBE at 0 the
             // slice drops the user probe and
             // synthesis prunes it...
-            wire [PROBE_BUS_W+15:0] i_ela_sample = {i_user_probe, i_probe_bus};
+            wire [PROBE_BUS_W+15:0] i_ela_sample = {i_user_probe, i_cpu_rdata, i_probe_bus[95:0]};
+                // NOTE: word 3 is what user.sv
+                // actually handed back on a read...
+
+            // NOTE: the CPU bus
+            // channel
+            // ------------
+
+            reg [2:0]                                   i_bus_op;
+            reg                                         i_bus_pin_wr_d1;
+
+            always @(posedge i_sysclk) begin
+                i_bus_pin_wr_d1 <= i_bus_pin_wr;
+
+                if (i_bus_pin_wr == 1'b1 && i_bus_pin_wr_d1 == 1'b0) begin
+                    i_bus_op <= (i_bus_op == 3'd4) ? 3'd1 : i_bus_op + 1'b1;
+                end
+                    // NOTE: counts writes 1 to 4, then
+                    // starts again at 1...
+
+                if (i_sysclk_resetn == 1'b0) begin
+                    i_bus_op        <= 3'd0;
+                    i_bus_pin_wr_d1 <= 1'b0;
+                end
+            end
+
+            wire [23:0] i_bus_channel = {
+                i_bus_pin_data,     // [23:8]   the 16 data wires
+                i_bus_op,           // [7:5]    write number, 1 to 4
+                i_bus_beat,         // [4:3]    beat, 0 to 3
+                i_cpu_valid,        // [2]      request waiting on memory
+                i_bus_pin_wr,       // [1]      wr
+                i_bus_pin_clk       // [0]      clk
+            };
+
+            if(!CPU_BUS_TEST) begin
+                assign i_probe = {
+                    i_bus_channel,                      // channel 5: CPU bus
+                    24'h000000,                         // channel 4: spare
+                    23'h000000, i_buttons[1],           // channel 3: button 2
+                    16'h0000,   i_counter,              // channel 2: 8-bit counter
+                    16'h0000,   i_user_probe[15:8],     // channel 1: pins 9-16
+                    8'h00,      i_user_probe            // channel 0: pins 1-16
+                };
+            end else begin
+                always @(posedge i_sysclk) begin
+                    i_probe <= i_ela_sample[ELA_SAMPLE_WIDTH-1:0];
+                end
+            end
 
             // ----------------------------------------------
             //  Embedded Logic Analyser
@@ -418,7 +471,7 @@ localparam WATCH_COUNT      = 4;
                     // SAMPLE_W > 32, so only bits below 32
                     // can ever be matched.
 
-                .EIO_EN         (1),
+                .EIO_EN         (CPU_BUS_TEST),
                 .EIO_IN_W       (PROBE_WATCH_W),
                 .EIO_OUT_W      (8)
                     // NOTE: the four watched words are slow
@@ -434,7 +487,7 @@ localparam WATCH_COUNT      = 4;
 
                 .sample_clk     (i_sysclk),
                 .sample_rst     (i_sysclk_reset),
-                .probe_in       (i_ela_sample[ELA_SAMPLE_WIDTH-1:0]),
+                .probe_in       (i_probe),
 
                 .eio_probe_in   (i_probe_watch),
                 .eio_probe_out  (i_eio_out),
