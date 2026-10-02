@@ -237,9 +237,9 @@ if ($m) { Write-Host "NOTE: -m / -clean_platform is not yet implemented."; exit 
 # ---- PRE-FLIGHT CHECKS ----
 
 ## generate_top_wrapper.ps1 — match Linux pattern of checking script exists
-if (-not (Test-Path "$PSScriptRoot\generate_top_wrapper.ps1")) {
-    Write-Host "ERROR: generate_top_wrapper.ps1 not found at: $PSScriptRoot"
-    Write-Host "Make sure generate_top_wrapper.ps1 is in the same folder as this script."
+if (-not (Test-Path $TopWrapperScript)) {
+    Write-Host "ERROR: generate_top_wrapper.ps1 not found at: $TopWrapperScript"
+    Write-Host "Make sure generate_top_wrapper.ps1 is in the device directory, alongside build.tcl."
     exit 1
 }
 
@@ -266,7 +266,7 @@ Write-Host "  Created artifacts dir: $ArtifactsDir"
 
 ## generate autogen_top_wrapper.sv
 Write-Host "Generating autogen_top_wrapper.sv..."
-& "$PSScriptRoot\generate_top_wrapper.ps1" `
+& $TopWrapperScript `
     -BuildArtifactsDirectory $ArtifactsDir `
     -TopWrapperFilename      "autogen_top_wrapper.sv" `
     -ClockFrequencyMhz       $ClockMhz `
