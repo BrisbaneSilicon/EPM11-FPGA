@@ -252,6 +252,8 @@ The most commonly used are listed below.
 | -t, --cpu_bus_test | Include a readback register set for the CPU bus and ELA the bus signaling. Required for EPM11-MCU 'cpu_bus_test.py' test program. |
 | -a, --clean_all_platforms | Perform cleanup of the entire build and exit. |
 
+If you change the clock with `-k`, set the MCU pulse delay to match, see [Pulse Delay](https://github.com/BrisbaneSilicon/EPM11-MCU#pulse-delay).
+
 ### Windows
 
 Open PowerShell (Admin not required), `cd` into the repository root, then the 'build' directory, and then run:
