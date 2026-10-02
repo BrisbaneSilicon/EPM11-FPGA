@@ -65,6 +65,8 @@ input               cpu_valid,
 output  reg         cpu_ready,
 ```
 
+By default, user.sv passes each request on to the FPGA memory (internal SRAM for the first 32 KB, HyperRAM above that), so a later `fpga.read(0x4)` returns `0xFF`.
+
 <br>
 
 ## Getting Started

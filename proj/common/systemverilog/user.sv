@@ -87,13 +87,33 @@ module user (
         probe[15:0] <= io[16:1];
             // NOTE: simply probe the io pins
 
-        cpu_ready <= cpu_valid & ~cpu_ready;
-            // NOTE: simply acknowlege any activity
-            // on the CPU bus
+        cpu_ready <= 1'b0;
+
+        if (cpu_valid == 1'b1 && cpu_ready == 1'b0 && ram_valid == 1'b0) begin
+            ram_addr    <= cpu_addr;
+            ram_wdata   <= cpu_wdata;
+            ram_wstrb   <= cpu_wstrb;
+            ram_valid   <= 1'b1;
+        end
+            // NOTE: pass each CPU bus request
+            // on to the FPGA memory...
+
+        if (ram_valid == 1'b1 && ram_ready == 1'b1) begin
+            ram_valid   <= 1'b0;
+            cpu_ready   <= 1'b1;
+
+            if (ram_wstrb == 4'h0) begin
+                cpu_rdata <= ram_rdata;
+            end
+        end
+            // NOTE: ...and hold what it read until the
+            // next read, as the CPU bus sends it back
+            // to the RPI after this handshake
 
         if (sysclk_resetn == 1'b0) begin
             probe       <= 0;
             cpu_ready   <= 1'b0;
+            ram_valid   <= 1'b0;
         end
     end
 
