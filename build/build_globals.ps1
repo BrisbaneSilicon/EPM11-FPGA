@@ -174,7 +174,11 @@ Write-Host "  Device ID      : $DeviceId"
 
 # ---- DERIVE PATHS FROM CSV VALUES ----
 # construct paths according to detected environment
+# note: the top wrapper generator lives alongside build.tcl in the device
+# directory, matching the Linux layout (see 'device_generate_top_wrapper_script'
+# in build_globals.sh) - it is device specific, not shared across devices.
 $BuildTcl  = "$RepoRoot\build\platforms\gowin\devices\$DeviceId\build.tcl"
+$TopWrapperScript = "$RepoRoot\build\platforms\gowin\devices\$DeviceId\generate_top_wrapper.ps1"
 $OutputDir = "$RepoRoot\build\platforms\gowin\devices\$DeviceId\$SpeedGrade\output"
 $ArtifactsDir = "$OutputDir\.artifacts"
 
