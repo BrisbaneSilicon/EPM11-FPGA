@@ -556,6 +556,8 @@ To install fpgacapZero, simply follow [OpenOCD Setup](#openocd-setup) and then t
 ## Authors
 
 - [@brisbanesilicon](https://github.com/BrisbaneSilicon)
+- [@CheekiestMonkey117](https://github.com/CheekiestMonkey117)
+
 
 <br>
 
