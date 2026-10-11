@@ -1,0 +1,15 @@
+{
+  "format": "fpgacapzero.probes.v1",
+  "core": "ela",
+  "sample_width": 128,
+  "probes": [
+    {"name": "clk",   "width": 1,  "lsb": 0},
+    {"name": "wr",    "width": 1,  "lsb": 1},
+    {"name": "beat",  "width": 2,  "lsb": 2},
+    {"name": "valid", "width": 1,  "lsb": 4},
+    {"name": "data",  "width": 16, "lsb": 16},
+    {"name": "addr",  "width": 32, "lsb": 32},
+    {"name": "wdata", "width": 32, "lsb": 64},
+    {"name": "rdata", "width": 32, "lsb": 96}
+  ]
+}

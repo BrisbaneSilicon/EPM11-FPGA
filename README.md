@@ -380,7 +380,7 @@ This should produce the following:
   "depth": 64,
   "num_channels": 6,
   "trig_stages": 1,
-  "has_storage_qualification": false,
+  "has_storage_qualification": true,
   "has_decimation": false,
   "has_ext_trigger": false,
   "has_timestamp": false,
@@ -417,6 +417,27 @@ See the table below for details on the captured channels. Note that you can manu
 | Build Switches | fcapZ CH1 | fcapZ CH2 | fcapZ CH3 | fcapZ CH4 | fcapZ CH5 | fcapZ CH6|
 | :------:|:------:|:------:|:------:|:------:|:------:|:------:|
 | ./build.sh -e |FPGA Pin 1-8 State|FPGA Pin 9-16 State|8-bit Counter|Button 2 State|0|0|
+
+To probe the CPU bus instead, build the firmware with both the '-e' and '-t' command line arguments. The bus is then plumbed to 'cpu_bus_test.sv', and its signals are captured on a single 128-bit channel.
+```bash
+./build.sh -e -t
+```
+Program the board and run OpenOCD as above, then start the capture below and, within its 60 second timeout, run the EPM11-MCU 'cpu_bus_test.py' test program. A sample is stored on every edge of the bus 'clk' and 'wr' wires, and the probe file names each signal.
+```
+fcapz --backend openocd --port 6666 --tap GW1NR-9C.tap capture --probe-file prog/cpu_bus_test.prob --depth 64 --stor-qual-mode 8 --stor-qual-mask 0x3 --trigger-value 0 --trigger-mask 0 --pretrigger 0 --posttrigger 63 --timeout 60 --format vcd --out bus.vcd
+```
+
+| Signal | Bits | Meaning |
+| :--- | :---: | :--- |
+| `clk` | 0 | The bus clock wire |
+| `wr` | 1 | The bus write wire, high for a write |
+| `valid` | 4 | Request pulse, one clock wide (add bit 4 to `--stor-qual-mask` to store it) |
+| `data` | 31:16 | The 16 data wires |
+| `addr` | 63:32 | Address being accessed |
+| `wdata` | 95:64 | Value being written |
+| `rdata` | 127:96 | Value handed back on a read |
+
+Storage qualification stays enabled until the ELA is reset, so press Pushbutton 1 before a capture without `--stor-qual-mode`.
 
 
 <br>
